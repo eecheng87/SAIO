@@ -10,38 +10,22 @@
 #include <linux/slab.h>
 #include <linux/version.h>
 
+#include "include/symbol.h"
+#include "include/util.h"
 #include "syscall.h"
-#include "systab.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Steven Cheng");
 MODULE_DESCRIPTION("Linux IO offloading");
 MODULE_VERSION("0.1");
 
-static void **syscall_table = 0;
 static struct task_struct *worker_task;
-
-struct task_struct *(*create_io_thread_ptr)(int (*)(void *), void *, int);
-void (*wake_up_new_task_ptr)(struct task_struct *);
 
 /* restore original syscall for recover */
 void *syscall_register_ori;
 void *syscall_exit_ori;
 
 typedef asmlinkage long (*sys_call_ptr_t)(long);
-
-extern unsigned long __force_order __weak;
-#define store_cr0(x) asm volatile("mov %0,%%cr0" : "+r"(x), "+m"(__force_order))
-static void allow_writes(void) {
-    unsigned long cr0 = read_cr0();
-    clear_bit(16, &cr0);
-    store_cr0(cr0);
-}
-static void disallow_writes(void) {
-    unsigned long cr0 = read_cr0();
-    set_bit(16, &cr0);
-    store_cr0(cr0);
-}
 
 int fd;
 char *buf;
@@ -50,14 +34,14 @@ static int worker(void *arg) {
     printk("im in worker!\n");
     while (1) {
         struct pt_regs reg;
-        void *f = (void *)syscall_table[1];
+        void *f = (void *)syscall_table_ptr[1];
         memset(&reg, 0, sizeof(reg));
         reg.di = fd;
         reg.si = (unsigned long)buf;
         reg.dx = 9;
         //((sys_call_ptr_t *)f)((long)&reg);
         printk("fd=%d buf=%lu\n", fd, (unsigned long)buf);
-        printk("wn=%ld\n", ((long (*)(long))syscall_table[1])(&reg));
+        printk("wn=%ld\n", ((long (*)(long))syscall_table_ptr[1])(&reg));
         ssleep(1);
         if (signal_pending(worker_task))
             break;
@@ -94,36 +78,28 @@ asmlinkage void sys_lioo_exit(void) {
 
 static int __init lioo_init(void) {
 
-    /* hooking system call */
-
-    /* avoid effect of KALSR, get address of syscall table by adding offset */
-    syscall_table = (void **)(scTab + ((char *)&system_wq - sysWQ));
-    create_io_thread_ptr =
-        (struct task_struct * (*)(int (*)(void *), void *, int))(
-            create_io_thread_base + ((char *)&system_wq - sysWQ));
-    wake_up_new_task_ptr = (void (*)(struct task_struct *))(
-        wake_up_new_task_base + ((char *)&system_wq - sysWQ));
+    init_not_exported_symbol();
 
     /* allow write */
     allow_writes();
     /* backup */
-    syscall_register_ori = (void *)syscall_table[__NR_lioo_register];
-    syscall_exit_ori = (void *)syscall_table[__NR_lioo_exit];
+    syscall_register_ori = (void *)syscall_table_ptr[__NR_lioo_register];
+    syscall_exit_ori = (void *)syscall_table_ptr[__NR_lioo_exit];
 
     /* hooking */
-    syscall_table[__NR_lioo_register] = (void *)sys_lioo_register;
-    syscall_table[__NR_lioo_exit] = (void *)sys_lioo_exit;
+    syscall_table_ptr[__NR_lioo_register] = (void *)sys_lioo_register;
+    syscall_table_ptr[__NR_lioo_exit] = (void *)sys_lioo_exit;
     /* dis-allow write */
     disallow_writes();
-    printk("sc[1] = %p\n", syscall_table[1]);
+
     printk("lioo init\n");
     return 0;
 }
 static void __exit lioo_exit(void) {
     /* recover */
     allow_writes();
-    syscall_table[__NR_lioo_register] = (void *)syscall_register_ori;
-    syscall_table[__NR_lioo_exit] = (void *)syscall_exit_ori;
+    syscall_table_ptr[__NR_lioo_register] = (void *)syscall_register_ori;
+    syscall_table_ptr[__NR_lioo_exit] = (void *)syscall_exit_ori;
     disallow_writes();
 
     // if(worker_task)
