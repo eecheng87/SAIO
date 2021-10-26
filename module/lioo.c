@@ -40,7 +40,7 @@ int start_index[MAX_THREAD_NUM];
 int main_pid; /* PID of main thread */
 
 static int worker(void *arg);
-struct task_struct *(*create_io_thread_ptr)(int (*)(void *), void *, int) = 0;
+//struct task_struct *(*create_io_thread_ptr)(int (*)(void *), void *, int) = 0;
 
 
 typedef asmlinkage long (*F0_t)(void);
@@ -56,7 +56,7 @@ static struct task_struct *worker_task2;
 static struct task_struct *worker_task3;
 static struct task_struct *worker_task4;
 
-void (*wake_up_new_task_ptr)(struct task_struct *) = 0;
+//void (*wake_up_new_task_ptr)(struct task_struct *) = 0;
 
 static inline long
 indirect_call(void *f, int argc,
