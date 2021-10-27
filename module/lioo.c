@@ -89,39 +89,42 @@ static int worker(void *arg) {
     allow_signal(SIGKILL);
     int wpid = current->pid, cur_cpuid = current->pid - main_pid;
     set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid - 1));
+    
+    batch_table[cur_cpuid - 1][0].sysnum = 0; // tmp use -> record # of done req.
     printk("im in worker, pid = %d, bound at cpu %d\n", current->pid, smp_processor_id());
-
+    
     while (1) {
 	    int gi = start_index[cur_cpuid];
 	    int gj = cur_cpuid;
-#if DEBUG
-    printk(KERN_INFO "In kt, Start flushing, started from index: %d\n", gi);
+#if 0
+printk(KERN_INFO "In kt, Start flushing at cpu%d, started from  [%d][%d]\n", smp_processor_id(), gj, gi);
 #endif
 
-    while (batch_table[gj][gi].rstatus == BENTRY_BUSY) {
+		while (batch_table[gj][gi].rstatus == BENTRY_BUSY) {
 
-#if DEBUG
-        printk(KERN_INFO "Index %d do syscall %d (%d %d)\n", gi,
-               batch_table[gj][gi].sysnum, gj, gi);
+#if 0
+printk(KERN_INFO "Index %d do syscall %d (%d %d) at cpu%d\n", gi,
+		   batch_table[gj][gi].sysnum, gj, gi, smp_processor_id());
 #endif
-        batch_table[gj][gi].sysret =
-            indirect_call(syscall_table_ptr[batch_table[gj][gi].sysnum],
-                          batch_table[gj][gi].nargs, batch_table[gj][gi].args);
-        batch_table[gj][gi].rstatus = BENTRY_EMPTY;
-        if(gi == MAX_ENTRY_NUM - 1){
-            if(gj == MAX_THREAD_NUM -1){
-                gj = 1;
-            }else
-            {
-                gj++;
-            }
-            gi = 1;
-        }else
-        {
-            gi++;
-        }
-    }
+			batch_table[gj][gi].sysret =
+				indirect_call(syscall_table_ptr[batch_table[gj][gi].sysnum],
+				              batch_table[gj][gi].nargs, batch_table[gj][gi].args);
+			batch_table[gj][gi].rstatus = BENTRY_EMPTY;
+			if(gi == MAX_ENTRY_NUM - 1){
+				if(gj == MAX_THREAD_NUM -1){
+				    gj = 1;
+				}else
+				{
+				    gj++;
+				}
+				gi = 1;
+			}else
+			{
+				gi++;
+			}
+		}
     	start_index[cur_cpuid] = gi;
+    	batch_table[cur_cpuid - 1][0].sysnum++;
         if (signal_pending(current)){
             printk("detect signal\n");
             break;
@@ -164,12 +167,12 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs *regs) {
 
     worker_task = create_io_thread_ptr(worker, 0, -1);
     worker_task2 = create_io_thread_ptr(worker, 0, -1);
-    worker_task3 = create_io_thread_ptr(worker, 0, -1);
-    worker_task4 = create_io_thread_ptr(worker, 0, -1);
+    //worker_task3 = create_io_thread_ptr(worker, 0, -1);
+    //worker_task4 = create_io_thread_ptr(worker, 0, -1);
     wake_up_new_task_ptr(worker_task);
     wake_up_new_task_ptr(worker_task2);
-    wake_up_new_task_ptr(worker_task3);
-    wake_up_new_task_ptr(worker_task4);
+    //wake_up_new_task_ptr(worker_task3);
+    //wake_up_new_task_ptr(worker_task4);
     return 0;
 }
 

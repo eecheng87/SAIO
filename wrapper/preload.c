@@ -12,34 +12,42 @@ int syscall_num; /* number of syscall triggered currently */
 int predict_res; /* 1: do batch; 0: do normal */
 int predict_state;
 
-/*
 long batch_start() {
     in_segment = 1;
-    batch_num = 0;
+    btable[0].sysnum = batch_num = 0;
     return 0;
 }
 
 long batch_flush() {
-    in_segment = 0;
+// FIXME: rename later -> purpose of this: waiting for completion (blocking)
 
+	return 0;
+    in_segment = 0;
     if (batch_num == 0)
         return 0;
-    batch_num = 0;
-    return syscall(__NR_batch_flush);
-}*/
+	printf("waiting for %d requests completion\n", batch_num);
+	// sysnum is for temp usage -> record current batch num
+    while(batch_num > btable[0].sysnum){
+    	printf("%d -> ", btable[0].sysnum);
+    }
+    printf("Completion\n");
+    btable[0].sysnum = batch_num = 0;
+    //return syscall(__NR_batch_flush);
+}
 
 ssize_t shutdown(int fd, int how) {
-
+#if 0
     syscall_num++;
     if (!in_segment) {
         return real_shutdown(fd, how);
     }
     batch_num++;
-
+#endif
+	batch_num++;
     //int off, toff = 0;
     //off = 1 << 6; /* 6 = log64 */
-
-    int off, toff = (fd % 4) + 1;
+	
+    int off, toff = (fd % 2) + 1;
     off = toff << 6;
 
 //while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
@@ -49,7 +57,9 @@ ssize_t shutdown(int fd, int how) {
     btable[off + curindex[toff]].args[0] = fd;
     btable[off + curindex[toff]].args[1] = how;
     btable[off + curindex[toff]].pid = main_thread_pid + off;
-//printf("fill shutdown at %d\n", off + curindex[toff]);
+    
+    while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+//printf("fill shutdown at [%d][%d]\n", toff, curindex[toff]);
     if (curindex[toff] == MAX_TABLE_SIZE - 1) {
 	curindex[toff] = 1;
     } else {
@@ -60,14 +70,17 @@ ssize_t shutdown(int fd, int how) {
     return 0;
 }
 
-ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count) {
+ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
+#if 0
     syscall_num++;
     if (!in_segment) {
         return real_sendfile(out_fd, in_fd, offset, count);
     }
     batch_num++;
+#endif
+	batch_num++;
 
-    int off, toff = (out_fd % 4) + 1;
+    int off, toff = (out_fd % 2) + 1;
     //off = 1 << 6; /* 6 = log64 */
     off = toff << 6;
 
@@ -80,14 +93,16 @@ ssize_t sendfile(int out_fd, int in_fd, off_t *offset, size_t count) {
     btable[off + curindex[toff]].args[2] = offset;
     btable[off + curindex[toff]].args[3] = count;
     btable[off + curindex[toff]].pid = main_thread_pid + off;
-//printf("fill shutdown at %d\n", off + curindex[toff]);
+//printf("fill sendfile at [%d][%d]\n", toff, curindex[toff]);
+	while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+
     if (curindex[toff] == MAX_TABLE_SIZE - 1) {
         curindex[toff] = 1;
     } else {
         curindex[toff]++;
     }
     /* assume success */
-    return 0;
+    return count;
 }
 
 #if 0
