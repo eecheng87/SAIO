@@ -14,43 +14,47 @@ int predict_state;
 
 long batch_start() {
     in_segment = 1;
-    btable[0].sysnum = batch_num = 0;
+    //btable[1].sysnum = batch_num = 0;
     return 0;
 }
 
 long batch_flush() {
 // FIXME: rename later -> purpose of this: waiting for completion (blocking)
-
-	return 0;
+	//printf("btable[1]=%d\n", btable[1].sysnum);
+	//return 0;
     in_segment = 0;
     if (batch_num == 0)
         return 0;
 	printf("waiting for %d requests completion\n", batch_num);
 	// sysnum is for temp usage -> record current batch num
-    while(batch_num > btable[0].sysnum){
-    	printf("%d -> ", btable[0].sysnum);
-    }
+    //while(btable[1].sysnum > 0){
+    	//printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
+    //}
+    
+    //btable[1].sysnum = batch_num = 0;
+    syscall(__NR_lioo_wait);
+    batch_num = 0;
     printf("Completion\n");
-    btable[0].sysnum = batch_num = 0;
-    //return syscall(__NR_batch_flush);
+	return 0;
 }
 
 ssize_t shutdown(int fd, int how) {
-#if 0
-    syscall_num++;
+#if 1
     if (!in_segment) {
         return real_shutdown(fd, how);
     }
-    batch_num++;
 #endif
 	batch_num++;
+	btable[1].sysnum++;
     //int off, toff = 0;
     //off = 1 << 6; /* 6 = log64 */
 	
-    int off, toff = (fd % 2) + 1;
+    int off, toff = /*(fd % 2)*/ + 1;
     off = toff << 6;
 
-//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+	// ensure no override
+	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+	//while(batch_num >= 60);
     btable[off + curindex[toff]].sysnum = __NR_shutdown;
     btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
     btable[off + curindex[toff]].nargs = 2;
@@ -58,10 +62,10 @@ ssize_t shutdown(int fd, int how) {
     btable[off + curindex[toff]].args[1] = how;
     btable[off + curindex[toff]].pid = main_thread_pid + off;
     
-    while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
-//printf("fill shutdown at [%d][%d]\n", toff, curindex[toff]);
+    //while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+	//printf("fill shutdown at [%d][%d]\n", toff, curindex[toff]);
     if (curindex[toff] == MAX_TABLE_SIZE - 1) {
-	curindex[toff] = 1;
+		curindex[toff] = 1;
     } else {
         curindex[toff]++;
     }
@@ -71,36 +75,38 @@ ssize_t shutdown(int fd, int how) {
 }
 
 ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
-#if 0
-    syscall_num++;
+#if 1
     if (!in_segment) {
         return real_sendfile(out_fd, in_fd, offset, count);
     }
-    batch_num++;
 #endif
 	batch_num++;
-
-    int off, toff = (out_fd % 2) + 1;
+	btable[1].sysnum++;
+	
+    int off, toff = /*(out_fd % 2)*/ + 1;
     //off = 1 << 6; /* 6 = log64 */
     off = toff << 6;
-
-//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+	
+	// ensure no override
+	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+	//while(batch_num >= 60);
     btable[off + curindex[toff]].sysnum = __NR_sendfile;
     btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
     btable[off + curindex[toff]].nargs = 4;
     btable[off + curindex[toff]].args[0] = out_fd;
     btable[off + curindex[toff]].args[1] = in_fd;
-    btable[off + curindex[toff]].args[2] = offset;
+    btable[off + curindex[toff]].args[2] = 0;//offset;
     btable[off + curindex[toff]].args[3] = count;
     btable[off + curindex[toff]].pid = main_thread_pid + off;
-//printf("fill sendfile at [%d][%d]\n", toff, curindex[toff]);
-	while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+	//printf("fill sendfile at [%d][%d]\n", toff, curindex[toff]);
+	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
 
     if (curindex[toff] == MAX_TABLE_SIZE - 1) {
         curindex[toff] = 1;
     } else {
         curindex[toff]++;
     }
+    
     /* assume success */
     return count;
 }
@@ -196,6 +202,7 @@ __attribute__((constructor)) static void setup(void) {
     real_sendto = real_sendto ? real_sendto : dlsym(RTLD_NEXT, "sendto");
     real_writev = real_writev ? real_writev : dlsym(RTLD_NEXT, "writev");
     real_shutdown = real_shutdown ? real_shutdown : dlsym(RTLD_NEXT, "shutdown");
+    real_sendfile = real_sendfile ? real_sendfile : dlsym(RTLD_NEXT, "sendfile");
 
     syscall(__NR_lioo_register, btable);
 

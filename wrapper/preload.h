@@ -51,3 +51,6 @@ typedef long (*writev_t)(int fd, const struct iovec *iov, int iovcnt);
 writev_t real_writev;
 typedef long (*shutdown_t)(int fd, int how);
 shutdown_t real_shutdown;
+typedef long (*sendfile_t)(int out_fd, int in_fd, off_t *offset, size_t count);
+sendfile_t real_sendfile;
+

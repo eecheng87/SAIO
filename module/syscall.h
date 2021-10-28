@@ -4,6 +4,7 @@
 #include <asm/unistd.h>
 #define __NR_lioo_register 400
 #define __NR_lioo_exit 401
+#define __NR_lioo_wait 402
 
 /* batch table entry info */
 #define BENTRY_EMPTY 0
@@ -30,6 +31,11 @@ struct batch_entry {
 static inline long lioo_register(struct batch_entry* table)
 {
 	syscall(__NR_lioo_register, table);
+}
+
+static inline long lioo_wait()
+{
+	syscall(__NR_lioo_wait);
 }
 
 #define scall0(N,FL,Z,P            ) ((syscall_t){__NR_##N,FL,Z,P,0 })

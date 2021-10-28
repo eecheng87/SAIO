@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include <linux/uaccess.h> /* copy_from_user put_user */
 #include <linux/smp.h>
+#include <linux/wait.h>
 
 #include "include/symbol.h"
 #include "include/util.h"
@@ -29,6 +30,7 @@ MODULE_VERSION("0.1");
 /* restore original syscall for recover */
 void *syscall_register_ori;
 void *syscall_exit_ori;
+void *syscall_wait_ori;
 
 typedef asmlinkage long (*sys_call_ptr_t)(long);
 
@@ -55,6 +57,8 @@ static struct task_struct *worker_task;
 static struct task_struct *worker_task2;
 static struct task_struct *worker_task3;
 static struct task_struct *worker_task4;
+
+static DECLARE_WAIT_QUEUE_HEAD(wq);
 
 //void (*wake_up_new_task_ptr)(struct task_struct *) = 0;
 
@@ -90,7 +94,7 @@ static int worker(void *arg) {
     int wpid = current->pid, cur_cpuid = current->pid - main_pid;
     set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid - 1));
     
-    batch_table[cur_cpuid - 1][0].sysnum = 0; // tmp use -> record # of done req.
+    batch_table[0][1].sysnum = 0; // tmp use -> record # of done req.
     printk("im in worker, pid = %d, bound at cpu %d\n", current->pid, smp_processor_id());
     
     while (1) {
@@ -99,7 +103,6 @@ static int worker(void *arg) {
 #if 0
 printk(KERN_INFO "In kt, Start flushing at cpu%d, started from  [%d][%d]\n", smp_processor_id(), gj, gi);
 #endif
-
 		while (batch_table[gj][gi].rstatus == BENTRY_BUSY) {
 
 #if 0
@@ -122,9 +125,15 @@ printk(KERN_INFO "Index %d do syscall %d (%d %d) at cpu%d\n", gi,
 			{
 				gi++;
 			}
+			batch_table[cur_cpuid - 1][1].sysnum -= 1;
+			//printk("[%d] num=%d\n", cur_cpuid - 1, batch_table[cur_cpuid - 1][1].sysnum);
+			if(batch_table[cur_cpuid - 1][1].sysnum == 0){
+				//printk("wake from worker\n");
+				wake_up_interruptible(&wq);
+			}
+			//printk("num = %d\n", ttt);
 		}
     	start_index[cur_cpuid] = gi;
-    	batch_table[cur_cpuid - 1][0].sysnum++;
         if (signal_pending(current)){
             printk("detect signal\n");
             break;
@@ -166,11 +175,11 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs *regs) {
 
 
     worker_task = create_io_thread_ptr(worker, 0, -1);
-    worker_task2 = create_io_thread_ptr(worker, 0, -1);
+    //worker_task2 = create_io_thread_ptr(worker, 0, -1);
     //worker_task3 = create_io_thread_ptr(worker, 0, -1);
     //worker_task4 = create_io_thread_ptr(worker, 0, -1);
     wake_up_new_task_ptr(worker_task);
-    wake_up_new_task_ptr(worker_task2);
+    //wake_up_new_task_ptr(worker_task2);
     //wake_up_new_task_ptr(worker_task3);
     //wake_up_new_task_ptr(worker_task4);
     return 0;
@@ -183,6 +192,13 @@ asmlinkage void sys_lioo_exit(void) {
     worker_task = NULL;
 }
 
+asmlinkage void sys_lioo_wait(void) {
+	//printk("in sleep\n");
+	wait_event_interruptible(wq, batch_table[0][1].sysnum == 0);
+	//printk("awake\n");
+	//cond_resched();
+}
+
 static int __init lioo_init(void) {
 
     init_not_exported_symbol();
@@ -192,10 +208,13 @@ static int __init lioo_init(void) {
     /* backup */
     syscall_register_ori = (void *)syscall_table_ptr[__NR_lioo_register];
     syscall_exit_ori = (void *)syscall_table_ptr[__NR_lioo_exit];
+    syscall_wait_ori = (void *)syscall_table_ptr[__NR_lioo_wait];
 
     /* hooking */
     syscall_table_ptr[__NR_lioo_register] = (void *)sys_lioo_register;
     syscall_table_ptr[__NR_lioo_exit] = (void *)sys_lioo_exit;
+    syscall_table_ptr[__NR_lioo_wait] = (void *)sys_lioo_wait;
+
     /* dis-allow write */
     disallow_writes();
 
@@ -207,6 +226,7 @@ static void __exit lioo_exit(void) {
     allow_writes();
     syscall_table_ptr[__NR_lioo_register] = (void *)syscall_register_ori;
     syscall_table_ptr[__NR_lioo_exit] = (void *)syscall_exit_ori;
+    syscall_table_ptr[__NR_lioo_wait] = (void *)syscall_wait_ori;
     disallow_writes();
 
     // if(worker_task)
