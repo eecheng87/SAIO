@@ -25,16 +25,16 @@ long batch_flush() {
     in_segment = 0;
     if (batch_num == 0)
         return 0;
-	printf("waiting for %d requests completion\n", batch_num);
+	//printf("waiting for %d requests completion\n", batch_num);
 	// sysnum is for temp usage -> record current batch num
     //while(btable[1].sysnum > 0){
     	//printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
     //}
-    
+
     //btable[1].sysnum = batch_num = 0;
     syscall(__NR_lioo_wait);
     batch_num = 0;
-    printf("Completion\n");
+    //printf("Completion\n");
 	return 0;
 }
 
@@ -54,14 +54,15 @@ ssize_t shutdown(int fd, int how) {
 
 	// ensure no override
 	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
-	//while(batch_num >= 60);
+	while(batch_num >= 60);
     btable[off + curindex[toff]].sysnum = __NR_shutdown;
-    btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
     btable[off + curindex[toff]].nargs = 2;
     btable[off + curindex[toff]].args[0] = fd;
     btable[off + curindex[toff]].args[1] = how;
     btable[off + curindex[toff]].pid = main_thread_pid + off;
     
+    // status must be changed in the last !!
+    btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
     //while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
 	//printf("fill shutdown at [%d][%d]\n", toff, curindex[toff]);
     if (curindex[toff] == MAX_TABLE_SIZE - 1) {
@@ -74,6 +75,7 @@ ssize_t shutdown(int fd, int how) {
     return 0;
 }
 
+off_t off_arr[300];
 ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
 #if 1
     if (!in_segment) {
@@ -89,18 +91,23 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
 	
 	// ensure no override
 	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
-	//while(batch_num >= 60);
-    btable[off + curindex[toff]].sysnum = __NR_sendfile;
-    btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
+	//while(batch_num >= 60){printf(".");};
+	
+	off_arr[off + curindex[toff]] = *offset;
+	//printf("-> %d\n", off+curindex[toff]);
+    btable[off + curindex[toff]].sysnum = 40;
     btable[off + curindex[toff]].nargs = 4;
     btable[off + curindex[toff]].args[0] = out_fd;
     btable[off + curindex[toff]].args[1] = in_fd;
-    btable[off + curindex[toff]].args[2] = 0;//offset;
+    btable[off + curindex[toff]].args[2] = &off_arr[off + curindex[toff]];//(unsigned long)offset; // maybe: cast is super important
     btable[off + curindex[toff]].args[3] = count;
     btable[off + curindex[toff]].pid = main_thread_pid + off;
-	//printf("fill sendfile at [%d][%d]\n", toff, curindex[toff]);
-	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
-
+	
+	
+	// status must be changed in the last !!
+	*offset = *offset + count;
+	btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
+	
     if (curindex[toff] == MAX_TABLE_SIZE - 1) {
         curindex[toff] = 1;
     } else {
@@ -118,9 +125,14 @@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
         return real_writev(fd, iov, iovcnt);
     }
     batch_num++;
+    btable[1].sysnum++;
 
-    int off, toff = 0, len = 0, i;
-    off = 1 << 6; /* 6 = log64 */
+    /*int off, toff = 0, len = 0, i;
+    off = 1 << 6;*/
+
+	int off, toff = /*(out_fd % 2)*/ + 1;
+    //off = 1 << 6; /* 6 = log64 */
+    off = toff << 6;
 
     for(i = 0; i < iovcnt; i++){
         int ll = iov[i].iov_len;
@@ -153,13 +165,6 @@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
     btable[off + curindex[toff]].pid = main_thread_pid + off;
 //printf("fill writev at %d\n", off + curindex[toff]);
     if (curindex[toff] == MAX_TABLE_SIZE - 1) {
-#if 0
-     	    if (curindex[1] == MAX_THREAD_NUM - 1) {
-            curindex[1] = 1;
-        } else {
-            curindex[1]++;
-        }
-#endif
         curindex[toff] = 1;
     } else {
         curindex[toff]++;
@@ -208,4 +213,6 @@ __attribute__((constructor)) static void setup(void) {
 
     for (i = 0; i < MAX_THREAD_NUM; i++)
         curindex[i] = 1;
+        
+	btable[1].sysnum = 0;
 }
