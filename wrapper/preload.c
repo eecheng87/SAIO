@@ -25,7 +25,7 @@ long batch_flush() {
     in_segment = 0;
     if (batch_num == 0)
         return 0;
-	//printf("waiting for %d requests completion\n", batch_num);
+	printf("waiting for %d requests completion\n", batch_num);
 	// sysnum is for temp usage -> record current batch num
     //while(btable[1].sysnum > 0){
     	//printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
@@ -34,7 +34,8 @@ long batch_flush() {
     //btable[1].sysnum = batch_num = 0;
     syscall(__NR_lioo_wait);
     batch_num = 0;
-    //printf("Completion\n");
+    btable[1].sysnum = 0;
+    printf("Completion\n");
 	return 0;
 }
 
@@ -54,7 +55,7 @@ ssize_t shutdown(int fd, int how) {
 
 	// ensure no override
 	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
-	while(batch_num >= 60);
+	while(batch_num >= 60){printf("-");};
     btable[off + curindex[toff]].sysnum = __NR_shutdown;
     btable[off + curindex[toff]].nargs = 2;
     btable[off + curindex[toff]].args[0] = fd;
@@ -91,8 +92,8 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
 	
 	// ensure no override
 	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
-	//while(batch_num >= 60){printf(".");};
-	
+	while(batch_num >= 60){printf(".");};
+	printf("sendfile(%d, %d, %d) off_arr[%d]\n", out_fd, in_fd, count, off + curindex[toff]);
 	off_arr[off + curindex[toff]] = *offset;
 	//printf("-> %d\n", off+curindex[toff]);
     btable[off + curindex[toff]].sysnum = 40;
@@ -105,6 +106,7 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
 	
 	
 	// status must be changed in the last !!
+	// maybe need to add barrier at here !!
 	*offset = *offset + count;
 	btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
 	

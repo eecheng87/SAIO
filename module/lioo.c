@@ -108,7 +108,7 @@ static int worker(void *arg) {
 				              batch_table[gj][gi].nargs, batch_table[gj][gi].args);
 			batch_table[gj][gi].rstatus = BENTRY_EMPTY;
 
-#if 0
+#if 1
 printk(KERN_INFO "Index %d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", gi,
 		   batch_table[gj][gi].sysnum, batch_table[gj][gi].sysret, batch_table[gj][gi].args[0],
 		   batch_table[gj][gi].args[1], batch_table[gj][gi].args[2],
@@ -127,9 +127,9 @@ printk(KERN_INFO "Index %d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", g
 			{
 				gi++;
 			}
-			batch_table[0][1].sysnum -= 1;
+			batch_table[0][0].sysnum += 1;
 			//printk("[%d] num=%d\n", cur_cpuid - 1, batch_table[cur_cpuid - 1][1].sysnum);
-			if(batch_table[0][1].sysnum == 0){
+			if(batch_table[0][0].sysnum == batch_table[0][1].sysnum){
 				//printk("wake from worker\n");
 				wake_up_interruptible(&wq);
 			}
@@ -174,6 +174,7 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs *regs) {
     main_pid = current->pid;
     printk("Main pid = %d\n", main_pid);
 
+	batch_table[0][0].sysnum = 0;
 
     worker_task = create_io_thread_ptr(worker, 0, -1);
     //worker_task2 = create_io_thread_ptr(worker, 0, -1);
@@ -195,7 +196,9 @@ asmlinkage void sys_lioo_exit(void) {
 
 asmlinkage void sys_lioo_wait(void) {
 	//printk("in sleep\n");
-	wait_event_interruptible(wq, batch_table[0][1].sysnum == 0);
+	wait_event_interruptible(wq, batch_table[0][1].sysnum == batch_table[0][0].sysnum);
+	
+	batch_table[0][0].sysnum = 0;
 	//while(batch_table[0][1].sysnum != 0){
 	//	cond_resched();
 	//}
