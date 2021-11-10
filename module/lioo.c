@@ -100,7 +100,9 @@ static int worker(void *arg) {
     while (1) {
 	    int gi = start_index[cur_cpuid];
 	    int gj = cur_cpuid;
-
+#if 0
+printk(KERN_INFO "Start at %d,%d, bound at cpu %d\n", gj, gi, smp_processor_id());
+#endif
 		while (batch_table[gj][gi].rstatus == BENTRY_BUSY) {
 
 			batch_table[gj][gi].sysret =
@@ -108,28 +110,23 @@ static int worker(void *arg) {
 				              batch_table[gj][gi].nargs, batch_table[gj][gi].args);
 			batch_table[gj][gi].rstatus = BENTRY_EMPTY;
 
-#if 1
-printk(KERN_INFO "Index %d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", gi,
+#if 0
+printk(KERN_INFO "Index %d,%d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", gj, gi,
 		   batch_table[gj][gi].sysnum, batch_table[gj][gi].sysret, batch_table[gj][gi].args[0],
 		   batch_table[gj][gi].args[1], batch_table[gj][gi].args[2],
 		   batch_table[gj][gi].args[3], smp_processor_id());
 #endif
 			
 			if(gi == MAX_ENTRY_NUM - 1){
-				if(gj == MAX_THREAD_NUM -1){
-				    gj = 1;
-				}else
-				{
-				    gj++;
-				}
 				gi = 1;
 			}else
 			{
 				gi++;
 			}
-			batch_table[0][0].sysnum += 1;
-			//printk("[%d] num=%d\n", cur_cpuid - 1, batch_table[cur_cpuid - 1][1].sysnum);
-			if(batch_table[0][0].sysnum == batch_table[0][1].sysnum){
+			//batch_table[0][0].sysnum += 1;
+			batch_table[0][cur_cpuid + 1].sysnum += 1;
+			
+			if((batch_table[0][0].sysnum == batch_table[0][2].sysnum) && (batch_table[0][1].sysnum == batch_table[0][3].sysnum)){
 				//printk("wake from worker\n");
 				wake_up_interruptible(&wq);
 			}
@@ -164,7 +161,7 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs *regs) {
         batch_table[i] = (struct batch_entry *)kmap(pinned_pages[i]);
 
     /* initial table status */
-    for (j = 0; j < MAX_THREAD_NUM; j++)
+    for (j = 1; j < MAX_THREAD_NUM; j++)
         for (i = 0; i < MAX_ENTRY_NUM; i++)
             batch_table[j][i].rstatus = BENTRY_EMPTY;
 
@@ -175,13 +172,16 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs *regs) {
     printk("Main pid = %d\n", main_pid);
 
 	batch_table[0][0].sysnum = 0;
+	batch_table[0][1].sysnum = 0;
+	batch_table[0][2].sysnum = 0;
+	batch_table[0][3].sysnum = 0;
 
     worker_task = create_io_thread_ptr(worker, 0, -1);
-    //worker_task2 = create_io_thread_ptr(worker, 0, -1);
+    worker_task2 = create_io_thread_ptr(worker, 0, -1);
     //worker_task3 = create_io_thread_ptr(worker, 0, -1);
     //worker_task4 = create_io_thread_ptr(worker, 0, -1);
     wake_up_new_task_ptr(worker_task);
-    //wake_up_new_task_ptr(worker_task2);
+    wake_up_new_task_ptr(worker_task2);
     //wake_up_new_task_ptr(worker_task3);
     //wake_up_new_task_ptr(worker_task4);
     return 0;
@@ -196,9 +196,9 @@ asmlinkage void sys_lioo_exit(void) {
 
 asmlinkage void sys_lioo_wait(void) {
 	//printk("in sleep\n");
-	wait_event_interruptible(wq, batch_table[0][1].sysnum == batch_table[0][0].sysnum);
+	wait_event_interruptible(wq, batch_table[0][2].sysnum == batch_table[0][0].sysnum && batch_table[0][1].sysnum == batch_table[0][3].sysnum);
 	
-	batch_table[0][0].sysnum = 0;
+
 	//while(batch_table[0][1].sysnum != 0){
 	//	cond_resched();
 	//}

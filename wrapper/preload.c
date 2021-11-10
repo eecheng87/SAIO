@@ -25,7 +25,7 @@ long batch_flush() {
     in_segment = 0;
     if (batch_num == 0)
         return 0;
-	printf("waiting for %d requests completion\n", batch_num);
+	//printf("waiting for %d requests completion\n", batch_num);
 	// sysnum is for temp usage -> record current batch num
     //while(btable[1].sysnum > 0){
     	//printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
@@ -34,8 +34,8 @@ long batch_flush() {
     //btable[1].sysnum = batch_num = 0;
     syscall(__NR_lioo_wait);
     batch_num = 0;
-    btable[1].sysnum = 0;
-    printf("Completion\n");
+    //btable[1].sysnum = btable[3].sysnum = 0;
+    //printf("Completion\n");
 	return 0;
 }
 
@@ -46,11 +46,11 @@ ssize_t shutdown(int fd, int how) {
     }
 #endif
 	batch_num++;
-	btable[1].sysnum++;
+	btable[fd & 1].sysnum++;
     //int off, toff = 0;
     //off = 1 << 6; /* 6 = log64 */
 	
-    int off, toff = /*(fd % 2)*/ + 1;
+    int off, toff = (fd & 1) + 1;
     off = toff << 6;
 
 	// ensure no override
@@ -84,23 +84,23 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
     }
 #endif
 	batch_num++;
-	btable[1].sysnum++;
+	btable[out_fd & 1].sysnum++;
 	
-    int off, toff = /*(out_fd % 2)*/ + 1;
+    int off, toff = (out_fd & 1) + 1;
     //off = 1 << 6; /* 6 = log64 */
     off = toff << 6;
 	
 	// ensure no override
 	//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
 	while(batch_num >= 60){printf(".");};
-	printf("sendfile(%d, %d, %d) off_arr[%d]\n", out_fd, in_fd, count, off + curindex[toff]);
-	off_arr[off + curindex[toff]] = *offset;
+	//printf("sendfile(%d, %d, %d) off_arr[%d]\n", out_fd, in_fd, count, off + curindex[toff]);
+	off_arr[off + curindex[toff] + 100] = *offset;
 	//printf("-> %d\n", off+curindex[toff]);
     btable[off + curindex[toff]].sysnum = 40;
     btable[off + curindex[toff]].nargs = 4;
     btable[off + curindex[toff]].args[0] = out_fd;
     btable[off + curindex[toff]].args[1] = in_fd;
-    btable[off + curindex[toff]].args[2] = &off_arr[off + curindex[toff]];//(unsigned long)offset; // maybe: cast is super important
+    btable[off + curindex[toff]].args[2] = &off_arr[off + curindex[toff] + 100];//(unsigned long)offset; // maybe: cast is super important
     btable[off + curindex[toff]].args[3] = count;
     btable[off + curindex[toff]].pid = main_thread_pid + off;
 	
@@ -185,11 +185,8 @@ __attribute__((constructor)) static void setup(void) {
     batch_num = 0;
     syscall_num = 0;
     predict_state = PREDICT_S1;
-#if DYNAMIC_PRE_ENABLE
-    predict_res = 0;
-#else
-    predict_res = 1;
-#endif
+
+
     /* init memory pool */
     mpool = (void *)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
     pool_offset = 0;
@@ -216,5 +213,6 @@ __attribute__((constructor)) static void setup(void) {
     for (i = 0; i < MAX_THREAD_NUM; i++)
         curindex[i] = 1;
         
-	btable[1].sysnum = 0;
+	btable[2].sysnum = 0;
+	btable[3].sysnum = 0;
 }
