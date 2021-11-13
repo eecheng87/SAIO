@@ -7,6 +7,7 @@ INC := include
 LIBPATH := lib
 LIBOBJS := $(patsubst %.c, %.o, $(wildcard lib/*.c))
 CFLAGS := -O1 -I$(INC)
+ccflags-y := -std=gnu99
 
 all: systab.h $(LIBOBJS)
 	make -C /lib/modules/`uname -r`/build M=$(PWD) modules

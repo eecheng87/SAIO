@@ -9,12 +9,8 @@
 #define POOL_UNIT 8
 #define BATCH_THRESHOLD 6
 
-#define PREDICT_S1 1
-#define PREDICT_S2 2
-#define PREDICT_S3 3
-#define PREDICT_S4 4
-
 #include "../module/syscall.h"
+#include "../module/include/esca.h"
 #include <dlfcn.h>
 #include <inttypes.h>
 #include <pthread.h>
@@ -26,16 +22,6 @@
 #include <time.h>
 #include <sys/uio.h>
 
-
-struct pthread_fake {
-    /* offset to find tid */
-    void *nothing[90];
-    pid_t tid;
-};
-
-struct batch_entry *btable;
-extern int curindex[MAX_THREAD_NUM];
-
 typedef long (*open_t)(const char *pathname, int flags, mode_t mode);
 open_t real_open;
 typedef long (*read_t)(int fd, void *buf, size_t count);
@@ -44,9 +30,6 @@ typedef long (*write_t)(unsigned int fd, const char *buf, size_t count);
 write_t real_write;
 typedef long (*close_t)(int fd);
 close_t real_close;
-typedef long (*sendto_t)(int sockfd, void *buf, size_t len, unsigned flags,
-                         struct sockaddr *dest_addr, int addrlen);
-sendto_t real_sendto;
 typedef long (*writev_t)(int fd, const struct iovec *iov, int iovcnt);
 writev_t real_writev;
 typedef long (*shutdown_t)(int fd, int how);
