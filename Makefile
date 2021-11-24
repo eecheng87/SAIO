@@ -1,7 +1,8 @@
-SUBDIRS := module
+SUBDIRS := module wrapper
 TOPTARGETS := all clean format
 
-$(TOPTARGETS): $(SUBDIRS)
+$(TOPTARGETS): $(SUBDIRS) 
+
 $(SUBDIRS):
 	$(MAKE) -C $@ $(MAKECMDGOALS)
 	
