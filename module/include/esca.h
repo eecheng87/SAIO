@@ -6,9 +6,9 @@
 #define MAX_TABLE_LEN 10
 #define MAX_CPU_NUM 2
 
-#define esca_smp_store_release(p, v) \
-	atomic_store_explicit((_Atomic __typeof__(*(p)) *)(p), (v), \
-			      memory_order_release)
+#define esca_smp_store_release(p, v)                           \
+    atomic_store_explicit((_Atomic __typeof__(*(p))*)(p), (v), \
+        memory_order_release)
 
 typedef struct esca_table_entry {
     unsigned pid;

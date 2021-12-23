@@ -43,7 +43,8 @@ esca_table_t* table;
 short submitted[MAX_CPU_NUM];
 
 static int worker(void* arg);
-//struct task_struct *(*create_io_thread_ptr)(int (*)(void *), void *, int) = 0;
+// struct task_struct *(*create_io_thread_ptr)(int (*)(void *), void *, int) =
+// 0;
 
 typedef asmlinkage long (*F0_t)(void);
 typedef asmlinkage long (*F1_t)(long);
@@ -60,13 +61,13 @@ static struct task_struct* worker_task4;
 
 static DECLARE_WAIT_QUEUE_HEAD(wq);
 
-//void (*wake_up_new_task_ptr)(struct task_struct *) = 0;
+// void (*wake_up_new_task_ptr)(struct task_struct *) = 0;
 
 static inline long
 indirect_call(void* f, int argc,
     long* a)
 { /* x64 syscall calling convention changed @4.17 to use
-                            struct pt_regs */
+                                                   struct pt_regs */
     struct pt_regs regs;
     memset(&regs, 0, sizeof regs);
     switch (argc) {
@@ -94,7 +95,8 @@ static int worker(void* arg)
     int wpid = current->pid, cur_cpuid = current->pid - main_pid - 1;
     set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
 
-    printk("im in worker, pid = %d, bound at cpu %d, cur_cpupid = %d\n", current->pid, smp_processor_id(), cur_cpuid);
+    printk("im in worker, pid = %d, bound at cpu %d, cur_cpupid = %d\n",
+        current->pid, smp_processor_id(), cur_cpuid);
 
     while (1) {
         int i = table[cur_cpuid].head_table;
@@ -111,7 +113,9 @@ static int worker(void* arg)
 
         head_index = (i * MAX_TABLE_ENTRY) + j;
         tail_index = (table[cur_cpuid].tail_table * 64) + table[cur_cpuid].tail_entry;
-        submitted[cur_cpuid] = (tail_index >= head_index) ? tail_index - head_index : MAX_TABLE_ENTRY * MAX_TABLE_LEN - head_index + tail_index;
+        submitted[cur_cpuid] = (tail_index >= head_index)
+            ? tail_index - head_index
+            : MAX_TABLE_ENTRY * MAX_TABLE_LEN - head_index + tail_index;
 
 #if 0
 		if(submitted[cur_cpuid] != 0)
@@ -119,10 +123,14 @@ static int worker(void* arg)
 #endif
 
         while (submitted[cur_cpuid] != 0) {
-            //printk("tail_index = %d, head_index = %d, tail_table = %d, tail_entry = %d\nBefore: submmitted[%d] = %hi\n", tail_index, head_index, table[cur_cpuid].tail_table, table[cur_cpuid].tail_entry, cur_cpuid, submitted[cur_cpuid]);
-
-            table[cur_cpuid].tables[i][j].sysret = indirect_call(syscall_table_ptr[table[cur_cpuid].tables[i][j].sysnum],
-                table[cur_cpuid].tables[i][j].nargs, table[cur_cpuid].tables[i][j].args);
+            // printk("tail_index = %d, head_index = %d, tail_table = %d,
+            // tail_entry = %d\nBefore: submmitted[%d] = %hi\n", tail_index,
+            // head_index, table[cur_cpuid].tail_table,
+            // table[cur_cpuid].tail_entry, cur_cpuid, submitted[cur_cpuid]);
+            table[cur_cpuid].tables[i][j].sysret = indirect_call(
+                syscall_table_ptr[table[cur_cpuid].tables[i][j].sysnum],
+                table[cur_cpuid].tables[i][j].nargs,
+                table[cur_cpuid].tables[i][j].args);
             table[cur_cpuid].tables[i][j].rstatus = BENTRY_EMPTY;
 
 #if 0
@@ -179,20 +187,13 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs* regs)
 
     /* map batch table from user-space to kernel */
     for (i = 0; i < MAX_CPU_NUM; i++) {
-        n_page = get_user_pages(
-            (unsigned long)(p1[i]),
-            MAX_TABLE_LEN,
-            FOLL_FORCE | FOLL_WRITE,
-            table_pinned_pages[i],
+        n_page = get_user_pages((unsigned long)(p1[i]), MAX_TABLE_LEN,
+            FOLL_FORCE | FOLL_WRITE, table_pinned_pages[i],
             NULL);
     }
 
-    n_page = get_user_pages(
-        (unsigned long)(p1[2]),
-        1,
-        FOLL_FORCE | FOLL_WRITE,
-        shared_info_pinned_pages,
-        NULL);
+    n_page = get_user_pages((unsigned long)(p1[2]), 1, FOLL_FORCE | FOLL_WRITE,
+        shared_info_pinned_pages, NULL);
 
     table = (esca_table_t*)kmap(shared_info_pinned_pages[0]);
     printk("table=%p\n", table);
@@ -223,12 +224,12 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs* regs)
 
     worker_task = create_io_thread_ptr(worker, 0, -1);
     worker_task2 = create_io_thread_ptr(worker, 0, -1);
-    //worker_task3 = create_io_thread_ptr(worker, 0, -1);
-    //worker_task4 = create_io_thread_ptr(worker, 0, -1);
+    // worker_task3 = create_io_thread_ptr(worker, 0, -1);
+    // worker_task4 = create_io_thread_ptr(worker, 0, -1);
     wake_up_new_task_ptr(worker_task);
     wake_up_new_task_ptr(worker_task2);
-    //wake_up_new_task_ptr(worker_task3);
-    //wake_up_new_task_ptr(worker_task4);
+    // wake_up_new_task_ptr(worker_task3);
+    // wake_up_new_task_ptr(worker_task4);
     return 0;
 }
 
@@ -242,15 +243,15 @@ asmlinkage void sys_lioo_exit(void)
 
 asmlinkage void sys_lioo_wait(void)
 {
-    //printk("in sleep\n");
+    // printk("in sleep\n");
     // TODO: make it more flexible
     wait_event_interruptible(wq, (submitted[0] == 0) && (submitted[1] == 0));
 
-    //while(batch_table[0][1].sysnum != 0){
+    // while(batch_table[0][1].sysnum != 0){
     //	cond_resched();
     //}
-    //printk("awake\n");
-    //cond_resched();
+    // printk("awake\n");
+    // cond_resched();
 }
 
 static int __init lioo_init(void)

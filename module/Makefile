@@ -27,9 +27,6 @@ ins:
 rm:
 	sudo rmmod $(MODULE_NAME)
 
-format:
-	clang-format -style="{IndentWidth: 4}" -i *.c lib/*.c include/*.h
-
 clean:
 	make -C /lib/modules/`uname -r`/build M=$(PWD) clean
 	rm include/systab.h

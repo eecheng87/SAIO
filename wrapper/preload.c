@@ -1,48 +1,53 @@
 #include "preload.h"
 int in_segment;
-int batch_num;   /* number of busy entry */
+int batch_num; /* number of busy entry */
 int syscall_num; /* number of syscall triggered currently */
 
 /* declare shared table, pin user space addr. to kernel phy. addr by kmap */
 esca_table_t* table;
 
-long batch_start() {
+long batch_start()
+{
     in_segment = 1;
     return 0;
 }
 
-long batch_flush() {
+long batch_flush()
+{
 
     in_segment = 0;
     if (batch_num == 0)
         return 0;
-	//printf("waiting for %d requests completion\n", batch_num);
-	// sysnum is for temp usage -> record current batch num
+    //printf("waiting for %d requests completion\n", batch_num);
+    // sysnum is for temp usage -> record current batch num
     //while(btable[1].sysnum > 0){
-    	//printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
+    //printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
     //}
 
     syscall(__NR_lioo_wait);
     batch_num = 0;
     //printf("Completion\n");
-	return 0;
+    return 0;
 }
 
-void update_index(int idx){
-    // avoid overwriting; 
+void update_index(int idx)
+{
+    // avoid overwriting;
     // TODO: need to consider more -> cross table scenario
-    // TODO: order of the head might be protected by barrier 
-    while((table[idx].tail_entry + 1 == table[idx].head_entry) && (table[idx].tail_table == table[idx].head_table));
+    // TODO: order of the head might be protected by barrier
+    while ((table[idx].tail_entry + 1 == table[idx].head_entry) && (table[idx].tail_table == table[idx].head_table))
+        ;
 
     if (table[idx].tail_entry == MAX_TABLE_ENTRY - 1) {
-		table[idx].tail_entry = 0;
+        table[idx].tail_entry = 0;
         table[idx].tail_table = (table[idx].tail_table == MAX_TABLE_LEN - 1) ? 0 : table[idx].tail_table + 1;
     } else {
         table[idx].tail_entry++;
     }
 }
 
-ssize_t shutdown(int fd, int how) {
+ssize_t shutdown(int fd, int how)
+{
 #if 1
     if (!in_segment) {
         return real_shutdown(fd, how);
@@ -50,48 +55,47 @@ ssize_t shutdown(int fd, int how) {
 #endif
     // TODO: imple. hash function for table len. greater than 2 scenario
     int idx = fd & 1;
-	batch_num++;
+    batch_num++;
 
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
 
-	//printf("fill shutdown at table[%d].tables[%d][%d]\n", idx, i, j);
+    //printf("fill shutdown at table[%d].tables[%d][%d]\n", idx, i, j);
 
     table[idx].tables[i][j].sysnum = __NR_shutdown;
     table[idx].tables[i][j].nargs = 2;
     table[idx].tables[i][j].args[0] = fd;
     table[idx].tables[i][j].args[1] = how;
 
-	update_index(idx);
-	
+    update_index(idx);
+
     // status must be changed in the last !!
     esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
-	//printf("fill shutdown at [%d][%d]\n", toff, curindex[toff]);
-
-    
+    //printf("fill shutdown at [%d][%d]\n", toff, curindex[toff]);
 
     /* assume success */
     return 0;
 }
 
 off_t off_arr[MAX_CPU_NUM][MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1];
-ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
+ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
+{
 #if 1
     if (!in_segment) {
         return real_sendfile(out_fd, in_fd, offset, count);
     }
 #endif
     int idx = out_fd & 1;
-	batch_num++;
+    batch_num++;
 
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
     int off = (i << 6) + j;
 
-	//printf("sendfile(%d, %d, %d) off_arr[%d][%d] at table[%d].tables[%d][%d]\n", out_fd, in_fd, count, idx, i * MAX_TABLE_ENTRY + j, idx, i, j);
-	
-	off_arr[idx][i * MAX_TABLE_ENTRY + j] = *offset;
-	//off_arr[i * MAX_TABLE_ENTRY + j] = *offset;
+    //printf("sendfile(%d, %d, %d) off_arr[%d][%d] at table[%d].tables[%d][%d]\n", out_fd, in_fd, count, idx, i * MAX_TABLE_ENTRY + j, idx, i, j);
+
+    off_arr[idx][i * MAX_TABLE_ENTRY + j] = *offset;
+    //off_arr[i * MAX_TABLE_ENTRY + j] = *offset;
 
     table[idx].tables[i][j].sysnum = 40;
     table[idx].tables[i][j].nargs = 4;
@@ -100,12 +104,12 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t *offset, size_t count) {
     table[idx].tables[i][j].args[2] = &off_arr[idx][i * MAX_TABLE_ENTRY + j];
     table[idx].tables[i][j].args[3] = count;
 
-	*offset = *offset + count;
-	update_index(idx);
-	// status must be changed in the last !!
-	// maybe need to add barrier at here !!
+    *offset = *offset + count;
+    update_index(idx);
+    // status must be changed in the last !!
+    // maybe need to add barrier at here !!
 
-	esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
+    esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
 
     /* assume success */
     return count;
@@ -169,7 +173,8 @@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
 }
 #endif
 
-__attribute__((constructor)) static void setup(void) {
+__attribute__((constructor)) static void setup(void)
+{
     int i;
     size_t pgsize = getpagesize();
     esca_table_entry_t* alloc_head1;
@@ -178,12 +183,12 @@ __attribute__((constructor)) static void setup(void) {
     batch_num = 0;
     syscall_num = 0;
 
-    table = (esca_table_t *)aligned_alloc(pgsize, pgsize);
-    
+    table = (esca_table_t*)aligned_alloc(pgsize, pgsize);
+
     // TODO: make this more flexible
-    alloc_head1 = (esca_table_entry_t *)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
-    alloc_head2 = (esca_table_entry_t *)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
-    
+    alloc_head1 = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
+    alloc_head2 = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
+
     printf("alloc_head1 = %p, alloc_head2 = %p\n", alloc_head1, alloc_head2);
 
     /* store glibc function */
@@ -197,21 +202,21 @@ __attribute__((constructor)) static void setup(void) {
 
     syscall(__NR_lioo_register, table, alloc_head1, alloc_head2);
 
-	/* Need to be assigned after kmap from kernel */
-	/* TODO: maybe this can be shorten */
-	//table[0].tables[0] = alloc_head1;
-	//table[1].tables[0] = alloc_head2;
-	
+    /* Need to be assigned after kmap from kernel */
+    /* TODO: maybe this can be shorten */
+    //table[0].tables[0] = alloc_head1;
+    //table[1].tables[0] = alloc_head2;
+
 #if 1
-    for(i = 0; i < MAX_TABLE_LEN; i++){
-    	table[0].tables[i] = alloc_head1 + i * MAX_TABLE_ENTRY;
+    for (i = 0; i < MAX_TABLE_LEN; i++) {
+        table[0].tables[i] = alloc_head1 + i * MAX_TABLE_ENTRY;
     }
-    for(i = 0; i < MAX_TABLE_LEN; i++){
-    	table[1].tables[i] = alloc_head2 + i * MAX_TABLE_ENTRY;
+    for (i = 0; i < MAX_TABLE_LEN; i++) {
+        table[1].tables[i] = alloc_head2 + i * MAX_TABLE_ENTRY;
     }
 #endif
     printf("table=%p, table[0].tables=%p, table[1].tables=%p\n", table[0].tables, table[0].tables[0], table[0].tables[1]);
-	
+
 #if 0
     for (i = 0; i < MAX_THREAD_NUM; i++)
         curindex[i] = 1;
