@@ -9,6 +9,15 @@ esca_table_t* table;
 long batch_start()
 {
     in_segment = 1;
+
+    for (int i = 0; i < MAX_CPU_NUM; i++) {
+        if (esca_unlikely(ESCA_READ_ONCE(table[i].flags) & ESCA_WORKER_NEED_WAKEUP)) {
+            table[i].flags |= ESCA_START_WAKEUP;
+            syscall(__NR_esca_wakeup, i);
+            table[i].flags &= ~ESCA_START_WAKEUP;
+        }
+    }
+
     return 0;
 }
 
@@ -24,7 +33,7 @@ long batch_flush()
     //printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
     //}
 
-    syscall(__NR_lioo_wait);
+    syscall(__NR_esca_wait);
     batch_num = 0;
     //printf("Completion\n");
     return 0;
@@ -77,6 +86,7 @@ ssize_t shutdown(int fd, int how)
     return 0;
 }
 
+#if 0
 off_t off_arr[MAX_CPU_NUM][MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1];
 ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
 {
@@ -114,19 +124,27 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
     /* assume success */
     return count;
 }
+#endif
 
-#if 0
-ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
-    syscall_num++;
+#if 1
+ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
+{
+
     if (!in_segment) {
         return real_writev(fd, iov, iovcnt);
     }
+    // TODO: imple. hash function for table len. greater than 2 scenario
+    int idx = fd & 1;
     batch_num++;
-    btable[1].sysnum++;
 
-    /*int off, toff = 0, len = 0, i;
-    off = 1 << 6;*/
+    int i = table[idx].tail_table;
+    int j = table[idx].tail_entry;
 
+    int len = 0;
+    for (int i = 0; i < iovcnt; i++) {
+        len += iov[i].iov_len;
+    }
+#if 0
 	int off, toff = /*(out_fd % 2)*/ + 1;
     //off = 1 << 6; /* 6 = log64 */
     off = toff << 6;
@@ -152,24 +170,22 @@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
 
         len += iov[i].iov_len;
     }
-//while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
-    btable[off + curindex[toff]].sysnum = __NR_writev;
-    btable[off + curindex[toff]].rstatus = BENTRY_BUSY;
-    btable[off + curindex[toff]].nargs = 3;
-    btable[off + curindex[toff]].args[0] = fd;
-    btable[off + curindex[toff]].args[1] = (long)(iovpool + iov_offset - iovcnt + 1);
-    btable[off + curindex[toff]].args[2] = iovcnt;
-    btable[off + curindex[toff]].pid = main_thread_pid + off;
-//printf("fill writev at %d\n", off + curindex[toff]);
-    if (curindex[toff] == MAX_TABLE_SIZE - 1) {
-        curindex[toff] = 1;
-    } else {
-        curindex[toff]++;
-    }
+#endif
+    //while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+    table[idx].tables[i][j].sysnum = __NR_writev;
+    table[idx].tables[i][j].rstatus = BENTRY_BUSY;
+    table[idx].tables[i][j].nargs = 3;
+    table[idx].tables[i][j].args[0] = fd;
+    table[idx].tables[i][j].args[1] = iov; //(long)(iovpool + iov_offset - iovcnt + 1);
+    table[idx].tables[i][j].args[2] = iovcnt;
+
+    update_index(idx);
+
+    // status must be changed in the last !!
+    esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
     /* assume always success */
     //printf("-> %d\n", len);
     return len;
-
 }
 #endif
 
@@ -189,7 +205,7 @@ __attribute__((constructor)) static void setup(void)
     alloc_head1 = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
     alloc_head2 = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
 
-    printf("alloc_head1 = %p, alloc_head2 = %p\n", alloc_head1, alloc_head2);
+    // printf("alloc_head1 = %p, alloc_head2 = %p\n", alloc_head1, alloc_head2);
 
     /* store glibc function */
     real_open = real_open ? real_open : dlsym(RTLD_NEXT, "open");
@@ -200,7 +216,7 @@ __attribute__((constructor)) static void setup(void)
     real_shutdown = real_shutdown ? real_shutdown : dlsym(RTLD_NEXT, "shutdown");
     real_sendfile = real_sendfile ? real_sendfile : dlsym(RTLD_NEXT, "sendfile");
 
-    syscall(__NR_lioo_register, table, alloc_head1, alloc_head2);
+    syscall(__NR_esca_register, table, alloc_head1, alloc_head2);
 
     /* Need to be assigned after kmap from kernel */
     /* TODO: maybe this can be shorten */
@@ -214,14 +230,5 @@ __attribute__((constructor)) static void setup(void)
     for (i = 0; i < MAX_TABLE_LEN; i++) {
         table[1].tables[i] = alloc_head2 + i * MAX_TABLE_ENTRY;
     }
-#endif
-    printf("table=%p, table[0].tables=%p, table[1].tables=%p\n", table[0].tables, table[0].tables[0], table[0].tables[1]);
-
-#if 0
-    for (i = 0; i < MAX_THREAD_NUM; i++)
-        curindex[i] = 1;
-
-	btable[2].sysnum = 0;
-	btable[3].sysnum = 0;
 #endif
 }

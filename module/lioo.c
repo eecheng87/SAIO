@@ -1,8 +1,10 @@
 #include <generated/asm-offsets.h> /* __NR_syscall_max */
+#include <linux/compiler.h>
 #include <linux/delay.h>
 #include <linux/err.h>
 #include <linux/errno.h>
 #include <linux/init.h>
+#include <linux/jiffies.h>
 #include <linux/kallsyms.h> /* kallsyms_lookup_name, __NR_* */
 #include <linux/kernel.h>
 #include <linux/kthread.h>
@@ -45,6 +47,10 @@ short submitted[MAX_CPU_NUM];
 static int worker(void* arg);
 // struct task_struct *(*create_io_thread_ptr)(int (*)(void *), void *, int) =
 // 0;
+
+// TODO: encapsulate them
+wait_queue_head_t worker_wait[MAX_CPU_NUM];
+// int flags[MAX_CPU_NUM]; // need_wake_up; this might be shared with user space (be aware of memory barrier)
 
 typedef asmlinkage long (*F0_t)(void);
 typedef asmlinkage long (*F1_t)(long);
@@ -89,11 +95,15 @@ indirect_call(void* f, int argc,
 
 int fd;
 char* buf;
+
 static int worker(void* arg)
 {
     allow_signal(SIGKILL);
     int wpid = current->pid, cur_cpuid = current->pid - main_pid - 1;
     set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
+    unsigned long timeout = 0;
+
+    DEFINE_WAIT(wait);
 
     printk("im in worker, pid = %d, bound at cpu %d, cur_cpupid = %d\n",
         current->pid, smp_processor_id(), cur_cpuid);
@@ -108,7 +118,32 @@ static int worker(void* arg)
                 printk("detect signal\n");
                 goto exit_worker;
             }
-            cond_resched();
+#if 1
+            // FIXME:
+            if (!time_after(jiffies, timeout)) {
+                // still don't need to sleep
+                cond_resched();
+                continue;
+            }
+
+            prepare_to_wait(&worker_wait[cur_cpuid], &wait, TASK_INTERRUPTIBLE);
+            WRITE_ONCE(table[cur_cpuid].flags, table[cur_cpuid].flags | ESCA_WORKER_NEED_WAKEUP);
+
+            if (smp_load_acquire(&table[cur_cpuid].tables[i][j].rstatus) == BENTRY_EMPTY) {
+                schedule();
+                // wake up by `wake_up` in batch_start
+                finish_wait(&worker_wait[cur_cpuid], &wait);
+
+                // clear need_wakeup
+                // FIXME: // need write barrier?
+                WRITE_ONCE(table[cur_cpuid].flags, table[cur_cpuid].flags & ~ESCA_WORKER_NEED_WAKEUP);
+                continue;
+            }
+
+            // condition satisfied, don't schedule
+            finish_wait(&worker_wait[cur_cpuid], &wait);
+            WRITE_ONCE(table[cur_cpuid].flags, table[cur_cpuid].flags & ~ESCA_WORKER_NEED_WAKEUP);
+#endif
         }
 
         head_index = (i * MAX_TABLE_ENTRY) + j;
@@ -117,20 +152,13 @@ static int worker(void* arg)
             ? tail_index - head_index
             : MAX_TABLE_ENTRY * MAX_TABLE_LEN - head_index + tail_index;
 
-#if 0
-		if(submitted[cur_cpuid] != 0)
-			printk("submmitted[%d] = %hi\n", cur_cpuid, submitted[cur_cpuid]);
-#endif
-
         while (submitted[cur_cpuid] != 0) {
-            // printk("tail_index = %d, head_index = %d, tail_table = %d,
-            // tail_entry = %d\nBefore: submmitted[%d] = %hi\n", tail_index,
-            // head_index, table[cur_cpuid].tail_table,
-            // table[cur_cpuid].tail_entry, cur_cpuid, submitted[cur_cpuid]);
             table[cur_cpuid].tables[i][j].sysret = indirect_call(
                 syscall_table_ptr[table[cur_cpuid].tables[i][j].sysnum],
                 table[cur_cpuid].tables[i][j].nargs,
                 table[cur_cpuid].tables[i][j].args);
+
+            // FIXME: need barrier?
             table[cur_cpuid].tables[i][j].rstatus = BENTRY_EMPTY;
 
 #if 0
@@ -161,6 +189,8 @@ static int worker(void* arg)
                 // TODO: make sure this only be executed one time
                 wake_up_interruptible(&wq);
             }
+
+            timeout = jiffies + table[cur_cpuid].idle_time;
         }
         table[cur_cpuid].head_table = i;
         table[cur_cpuid].head_entry = j;
@@ -178,7 +208,7 @@ exit_worker:
 }
 
 /* after linux kernel 4.7, parameter was restricted into pt_regs type */
-asmlinkage long sys_lioo_register(const struct __user pt_regs* regs)
+asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
 {
     int n_page, i, j, k;
 
@@ -210,13 +240,18 @@ asmlinkage long sys_lioo_register(const struct __user pt_regs* regs)
             for (k = 0; k < MAX_TABLE_ENTRY; k++)
                 table[i].tables[j][k].rstatus = BENTRY_EMPTY;
 
+    // TODO: merge them
     for (i = 0; i < MAX_CPU_NUM; i++) {
         table[i].head_table = table[i].tail_table = 0;
         table[i].head_entry = table[i].tail_entry = 0;
     }
 
+    // TODO: merge them
     for (i = 0; i < MAX_CPU_NUM; i++) {
         submitted[i] = 0;
+        table[i].flags = 0;
+        table[i].idle_time = msecs_to_jiffies(DEFAULT_IDLE_TIME);
+        init_waitqueue_head(&worker_wait[i]);
     }
 
     main_pid = current->pid;
@@ -241,7 +276,15 @@ asmlinkage void sys_lioo_exit(void)
     worker_task = NULL;
 }
 
-asmlinkage void sys_lioo_wait(void)
+asmlinkage void sys_esca_wakeup(const struct __user pt_regs* regs)
+{
+    int i = regs->di;
+    if (likely(READ_ONCE(table[i].flags) & ESCA_START_WAKEUP)) {
+        wake_up(&worker_wait[i]);
+    }
+}
+
+asmlinkage void sys_esca_wait(void)
 {
     // printk("in sleep\n");
     // TODO: make it more flexible
@@ -262,14 +305,14 @@ static int __init lioo_init(void)
     /* allow write */
     allow_writes();
     /* backup */
-    syscall_register_ori = (void*)syscall_table_ptr[__NR_lioo_register];
-    syscall_exit_ori = (void*)syscall_table_ptr[__NR_lioo_exit];
-    syscall_wait_ori = (void*)syscall_table_ptr[__NR_lioo_wait];
+    syscall_register_ori = (void*)syscall_table_ptr[__NR_esca_register];
+    syscall_exit_ori = (void*)syscall_table_ptr[__NR_esca_wakeup];
+    syscall_wait_ori = (void*)syscall_table_ptr[__NR_esca_wait];
 
     /* hooking */
-    syscall_table_ptr[__NR_lioo_register] = (void*)sys_lioo_register;
-    syscall_table_ptr[__NR_lioo_exit] = (void*)sys_lioo_exit;
-    syscall_table_ptr[__NR_lioo_wait] = (void*)sys_lioo_wait;
+    syscall_table_ptr[__NR_esca_register] = (void*)sys_esca_register;
+    syscall_table_ptr[__NR_esca_wakeup] = (void*)sys_esca_wakeup;
+    syscall_table_ptr[__NR_esca_wait] = (void*)sys_esca_wait;
 
     /* dis-allow write */
     disallow_writes();
@@ -281,9 +324,9 @@ static void __exit lioo_exit(void)
 {
     /* recover */
     allow_writes();
-    syscall_table_ptr[__NR_lioo_register] = (void*)syscall_register_ori;
-    syscall_table_ptr[__NR_lioo_exit] = (void*)syscall_exit_ori;
-    syscall_table_ptr[__NR_lioo_wait] = (void*)syscall_wait_ori;
+    syscall_table_ptr[__NR_esca_register] = (void*)syscall_register_ori;
+    syscall_table_ptr[__NR_esca_wakeup] = (void*)syscall_exit_ori;
+    syscall_table_ptr[__NR_esca_wait] = (void*)syscall_wait_ori;
     disallow_writes();
 
     // if(worker_task)

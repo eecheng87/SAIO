@@ -53,6 +53,7 @@ dkms.conf
 
 # Generated file
 *.dwo
-module/systab.h
+module/include/systab.h
 user/test
 web/*.html
+downloads/

@@ -1,7 +1,7 @@
 all: preload.so
 
 .PHONY: clean
-preload.so:
+preload.so: dummy.c preload.c
 	gcc -shared -o libdummy.so -fPIC dummy.c
 	gcc -I../include -shared -fPIC preload.c -o preload.so -ldl -lpthread -lrt
 

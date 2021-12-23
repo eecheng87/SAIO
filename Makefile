@@ -40,10 +40,16 @@ launch-lighttpd:
 	./$(LIGHTY_PATH)/src/lighttpd -D -f $(LIGHTY_PATH)/src/lighttpd.conf
 	
 test-lighttpd-perf:
-	./$(LIGHTY_PATH)/src/lighttpd -D -f $(LIGHTY_PATH)/src/lighttpd.conf & \
-	wrk -c 50 -t 2 -d 1s http://localhost:3000/a10.html
-	@echo "kill lighttpd"
-	$(MAKE) kill-lighttpd
+	./$(LIGHTY_PATH)/src/lighttpd -D -f $(LIGHTY_PATH)/src/lighttpd.conf #& \
+	#taskset --cpu-list 2,3 wrk -c 50 -t 2 -d 5s http://localhost:3000/a50.html
+	#@echo "kill lighttpd"
+	#$(MAKE) kill-lighttpd
+
+test-esca-lighttpd-perf:
+	LD_PRELOAD=wrapper/preload.so ./$(LIGHTY_PATH)/src/lighttpd -D -f $(LIGHTY_PATH)/src/lighttpd.conf #& \
+	#wrk -c 50 -t 2 -d 5s http://localhost:3000/b.html
+	#@echo "kill lighttpd"
+	#$(MAKE) kill-lighttpd
 	
 kill-lighttpd:
 	kill -9 $(shell ps -ef | awk '$$8 ~ /lighttpd/ {print $$2}')
