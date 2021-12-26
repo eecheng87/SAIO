@@ -1,4 +1,11 @@
 #include "preload.h"
+
+#if defined(__x86_64__)
+#include "../module/include/aarch64_syscall.h"
+#elif defined(__aarch64__)
+#include "../module/include/x86_syscall.h"
+#endif
+
 int in_segment;
 int batch_num; /* number of busy entry */
 int syscall_num; /* number of syscall triggered currently */
@@ -75,7 +82,7 @@ ssize_t shutdown(int fd, int how)
 
     //printf("fill shutdown at table[%d].tables[%d][%d]\n", idx, i, j);
 
-    table[idx].tables[i][j].sysnum = __NR_shutdown;
+    table[idx].tables[i][j].sysnum = __ESCA_shutdown;
     table[idx].tables[i][j].nargs = 2;
     table[idx].tables[i][j].args[0] = fd;
     table[idx].tables[i][j].args[1] = how;

@@ -22,6 +22,7 @@
 
 #include "include/esca.h"
 #include "include/symbol.h"
+#include "include/systab.h"
 #include "include/util.h"
 #include "syscall.h"
 
@@ -71,11 +72,11 @@ static DECLARE_WAIT_QUEUE_HEAD(wq);
 static inline long
 indirect_call(void* f, int argc,
     long* a)
-{ /* x64 syscall calling convention changed @4.17 to use
-                                                   struct pt_regs */
+{
     struct pt_regs regs;
     memset(&regs, 0, sizeof regs);
     switch (argc) {
+#if defined(__x86_64__)
     case 6:
         regs.r9 = a[5];
     case 5:
@@ -88,9 +89,121 @@ indirect_call(void* f, int argc,
         regs.si = a[1];
     case 1:
         regs.di = a[0];
+#elif defined(__aarch64__)
+    case 6:
+        regs.regs[5] = a[5];
+    case 5:
+        regs.regs[4] = a[4];
+    case 4:
+        regs.regs[3] = a[3];
+    case 3:
+        regs.regs[2] = a[2];
+    case 2:
+        regs.regs[1] = a[1];
+    case 1:
+        regs.regs[0] = a[0];
+#endif
     }
     return ((F1_t)f)((long)&regs);
 }
+
+#if defined(__aarch64__)
+
+static struct mm_struct* init_mm_ptr;
+// From arch/arm64/mm/pageattr.c.
+struct page_change_data {
+    pgprot_t set_mask;
+    pgprot_t clear_mask;
+};
+
+// From arch/arm64/mm/pageattr.c.
+static int change_page_range(pte_t* ptep, unsigned long addr, void* data)
+{
+    struct page_change_data* cdata = data;
+    pte_t pte = READ_ONCE(*ptep);
+
+    pte = clear_pte_bit(pte, cdata->clear_mask);
+    pte = set_pte_bit(pte, cdata->set_mask);
+
+    set_pte(ptep, pte);
+    return 0;
+}
+
+// From arch/arm64/mm/pageattr.c.
+static int __change_memory_common(unsigned long start, unsigned long size,
+    pgprot_t set_mask, pgprot_t clear_mask)
+{
+    struct page_change_data data;
+    int ret;
+
+    data.set_mask = set_mask;
+    data.clear_mask = clear_mask;
+
+    ret = apply_to_page_range(init_mm_ptr, start, size, change_page_range, &data);
+
+    flush_tlb_kernel_range(start, start + size);
+    return ret;
+}
+
+// Simplified set_memory_rw() from arch/arm64/mm/pageattr.c.
+static int set_page_rw(unsigned long addr)
+{
+    vm_unmap_aliases();
+    return __change_memory_common(addr, PAGE_SIZE, __pgprot(PTE_WRITE), __pgprot(PTE_RDONLY));
+}
+
+// Simplified set_memory_ro() from arch/arm64/mm/pageattr.c.
+static int set_page_ro(unsigned long addr)
+{
+    vm_unmap_aliases();
+    return __change_memory_common(addr, PAGE_SIZE, __pgprot(PTE_RDONLY), __pgprot(PTE_WRITE));
+}
+
+void allow_writes(void)
+{
+    set_page_rw((unsigned long)(syscall_table_ptr + __NR_esca_register) & PAGE_MASK);
+}
+void disallow_writes(void)
+{
+    set_page_ro((unsigned long)(syscall_table_ptr + __NR_esca_register) & PAGE_MASK);
+}
+static void enable_cycle_counter_el0(void* data)
+{
+    u64 val;
+    /* Disable cycle counter overflow interrupt */
+    asm volatile("msr pmintenset_el1, %0"
+                 :
+                 : "r"((u64)(0 << 31)));
+    /* Enable cycle counter */
+    asm volatile("msr pmcntenset_el0, %0" ::"r" BIT(31));
+    /* Enable user-mode access to cycle counters. */
+    asm volatile("msr pmuserenr_el0, %0"
+                 :
+                 : "r"(BIT(0) | BIT(2)));
+    /* Clear cycle counter and start */
+    asm volatile("mrs %0, pmcr_el0"
+                 : "=r"(val));
+    val |= (BIT(0) | BIT(2));
+    isb();
+    asm volatile("msr pmcr_el0, %0"
+                 :
+                 : "r"(val));
+    val = BIT(27);
+    asm volatile("msr pmccfiltr_el0, %0"
+                 :
+                 : "r"(val));
+}
+
+static void disable_cycle_counter_el0(void* data)
+{
+    /* Disable cycle counter */
+    asm volatile("msr pmcntenset_el0, %0" ::"r"(0 << 31));
+    /* Disable user-mode access to counters. */
+    asm volatile("msr pmuserenr_el0, %0"
+                 :
+                 : "r"((u64)0));
+}
+#endif
 
 extern struct task_struct* (*copy_process_ptr)(struct pid* pid, int trace, int node, struct kernel_clone_args* args);
 // This is actually not `create_io_thread` after v5.13
@@ -227,8 +340,11 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     int n_page, i, j, k;
 
     // TODO: make it more flexible
+#if defined(__x86_64__)
     unsigned long p1[MAX_CPU_NUM + 1] = { regs->si, regs->dx, regs->di };
-
+#elif defined(__aarch64__)
+    unsigned long p1[MAX_CPU_NUM + 1] = { regs->regs[1], regs->regs[2], regs->regs[0] };
+#endif
     /* map batch table from user-space to kernel */
     for (i = 0; i < MAX_CPU_NUM; i++) {
         n_page = get_user_pages((unsigned long)(p1[i]), MAX_TABLE_LEN,
@@ -271,7 +387,7 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     main_pid = current->pid;
     printk("Main pid = %d\n", main_pid);
 
-	// closure is important
+    // closure is important
     current->flags |= PF_IO_WORKER;
     worker_task = create_io_thread(worker, 0, -1);
     current->flags &= ~PF_IO_WORKER;
@@ -296,7 +412,11 @@ asmlinkage void sys_lioo_exit(void)
 
 asmlinkage void sys_esca_wakeup(const struct __user pt_regs* regs)
 {
+#if defined(__x86_64__)
     int i = regs->di;
+#elif defined(__aarch64__)
+    int i = regs->regs[0];
+#endif
     if (likely(READ_ONCE(table[i].flags) & ESCA_START_WAKEUP)) {
         wake_up(&worker_wait[i]);
     }
@@ -319,6 +439,11 @@ static int __init lioo_init(void)
 {
 
     init_not_exported_symbol();
+
+#if defined(__aarch64__)
+    init_mm_ptr = (struct mm_struct*)(sysMM + ((char*)&system_wq - sysWQ));
+    on_each_cpu(enable_cycle_counter_el0, NULL, 1);
+#endif
 
     /* allow write */
     allow_writes();
@@ -346,6 +471,11 @@ static void __exit lioo_exit(void)
     syscall_table_ptr[__NR_esca_wakeup] = (void*)syscall_exit_ori;
     syscall_table_ptr[__NR_esca_wait] = (void*)syscall_wait_ori;
     disallow_writes();
+
+#if defined(__aarch64__)
+    init_mm_ptr = (struct mm_struct*)(sysMM + ((char*)&system_wq - sysWQ));
+    on_each_cpu(disable_cycle_counter_el0, NULL, 1);
+#endif
 
     // if(worker_task)
     //  kthread_stop(worker_task);
