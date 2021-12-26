@@ -63,7 +63,11 @@ ssize_t shutdown(int fd, int how)
     }
 #endif
     // TODO: imple. hash function for table len. greater than 2 scenario
+#if 1
+    int idx = 0;
+#else
     int idx = fd & 1;
+#endif
     batch_num++;
 
     int i = table[idx].tail_table;
@@ -86,7 +90,7 @@ ssize_t shutdown(int fd, int how)
     return 0;
 }
 
-#if 0
+#if 1
 off_t off_arr[MAX_CPU_NUM][MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1];
 ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
 {
@@ -95,7 +99,12 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
         return real_sendfile(out_fd, in_fd, offset, count);
     }
 #endif
+
+#if 1
+    int idx = 0;
+#else
     int idx = out_fd & 1;
+#endif
     batch_num++;
 
     int i = table[idx].tail_table;
@@ -126,7 +135,7 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
 }
 #endif
 
-#if 1
+#if 0
 ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
 {
 
@@ -134,7 +143,11 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
         return real_writev(fd, iov, iovcnt);
     }
     // TODO: imple. hash function for table len. greater than 2 scenario
+#if 1
+    int idx = 0;
+#else
     int idx = fd & 1;
+#endif
     batch_num++;
 
     int i = table[idx].tail_table;
