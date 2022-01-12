@@ -16,12 +16,10 @@ all: systab.h $(LIBOBJS)
 systab.h:
 	(grep -w sys_call_table /boot/System.map-`uname -r` | \
 	  sed 's/\([^ ]*\) .*/#define scTab ((char *)0x\1UL)/'; \
-      grep -w copy_process /boot/System.map-`uname -r` | \
-      sed 's/\([^ ]*\) .*/#define copy_process_base ((char *)0x\1UL)/'; \
+	  grep -w create_io_thread /boot/System.map-`uname -r` | \
+      sed 's/\([^ ]*\) .*/#define create_io_thread_base ((char *)0x\1UL)/'; \
 	  grep -w wake_up_new_task /boot/System.map-`uname -r` | \
       sed 's/\([^ ]*\) .*/#define wake_up_new_task_base ((char *)0x\1UL)/'; \
-      grep -w kernel_clone /boot/System.map-`uname -r` | \
-      sed 's/\([^ ]*\) .*/#define kernel_clone_base ((char *)0x\1UL)/'; \
 	  grep -w init_mm /boot/System.map-`uname -r` | \
       sed 's/\([^ ]*\) .*/#define sysMM ((char *)0x\1UL)/'; \
 	  grep -w system_wq  /boot/System.map-`uname -r` | \

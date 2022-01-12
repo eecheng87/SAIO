@@ -205,21 +205,6 @@ static void disable_cycle_counter_el0(void* data)
 }
 #endif
 
-extern struct task_struct* (*copy_process_ptr)(struct pid* pid, int trace, int node, struct kernel_clone_args* args);
-// This is actually not `create_io_thread` after v5.13
-struct task_struct* create_io_thread(int (*fn)(void*), void* arg, int node)
-{
-    unsigned long flags = CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_IO | SIGCHLD;
-    struct kernel_clone_args args = {
-        .flags = ((lower_32_bits(flags) | CLONE_VM | CLONE_UNTRACED) & ~CSIGNAL),
-        .exit_signal = (lower_32_bits(flags) & CSIGNAL),
-        .stack = (unsigned long)fn,
-        .stack_size = (unsigned long)arg
-    };
-
-    return kernel_clone_ptr(&args);
-}
-
 int fd;
 char* buf;
 
@@ -388,14 +373,12 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     printk("Main pid = %d\n", main_pid);
 
     // closure is important
-    current->flags |= PF_IO_WORKER;
-    worker_task = create_io_thread(worker, 0, -1);
-    current->flags &= ~PF_IO_WORKER;
+    worker_task = create_io_thread_ptr(worker, 0, -1);
     //worker_task2 = create_io_thread_ptr(worker, 0, -1);
     // worker_task3 = create_io_thread_ptr(worker, 0, -1);
     // worker_task4 = create_io_thread_ptr(worker, 0, -1);
 
-    //wake_up_new_task_ptr(worker_task);
+    wake_up_new_task_ptr(worker_task);
     //wake_up_new_task_ptr(worker_task2);
     // wake_up_new_task_ptr(worker_task3);
     // wake_up_new_task_ptr(worker_task4);
