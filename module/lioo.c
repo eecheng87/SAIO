@@ -259,7 +259,7 @@ static int worker(void* arg)
         }
 
         head_index = (i * MAX_TABLE_ENTRY) + j;
-        tail_index = (table[cur_cpuid].tail_table * 64) + table[cur_cpuid].tail_entry;
+        tail_index = (table[cur_cpuid].tail_table * MAX_TABLE_ENTRY) + table[cur_cpuid].tail_entry;
         submitted[cur_cpuid] = (tail_index >= head_index)
             ? tail_index - head_index
             : MAX_TABLE_ENTRY * MAX_TABLE_LEN - head_index + tail_index;
@@ -311,7 +311,6 @@ static int worker(void* arg)
             printk("detect signal\n");
             goto exit_worker;
         }
-        cond_resched();
     }
 exit_worker:
     printk("kernel thread exit\n");

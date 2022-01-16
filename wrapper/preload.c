@@ -34,23 +34,18 @@ long batch_flush()
     in_segment = 0;
     if (batch_num == 0)
         return 0;
-    //printf("waiting for %d requests completion\n", batch_num);
-    // sysnum is for temp usage -> record current batch num
-    //while(btable[1].sysnum > 0){
-    //printf("batch_num=%d btable[0].sysnum=%d\n", batch_num, btable[1].sysnum);
-    //}
 
     syscall(__NR_esca_wait);
     batch_num = 0;
-    //printf("Completion\n");
+
     return 0;
 }
 
 void update_index(int idx)
 {
     // avoid overwriting;
-    // TODO: need to consider more -> cross table scenario
-    // TODO: order of the head might be protected by barrier
+    // FIXME: need to consider more -> cross table scenario
+    // FIXME: order of the head might be protected by barrier
     while ((table[idx].tail_entry + 1 == table[idx].head_entry) && (table[idx].tail_table == table[idx].head_table))
         ;
 

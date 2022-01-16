@@ -1,7 +1,7 @@
 #ifndef _ESCA_H
 #define _ESCA_H
 
-/* 
+/*
 * THIS FILE CAN"T CONTAIN KERNEL DATA STRUCTURE,
 * BECAUSE IT'S SHARED WITH USER LAND
 */
@@ -11,7 +11,7 @@
 #define MAX_TABLE_ENTRY 64
 #define MAX_TABLE_LEN 10
 #define MAX_CPU_NUM 2
-#define DEFAULT_IDLE_TIME 500 /* in msec */
+#define DEFAULT_IDLE_TIME 1500 /* in msec */
 
 #define ESCA_WRITE_ONCE(var, val)                           \
     atomic_store_explicit((_Atomic __typeof__(var)*)&(var), \
