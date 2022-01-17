@@ -1,14 +1,19 @@
 #include "preload.h"
 
-#if defined(__x86_64__)
+#if defined(__aarch64__)
 #include "../module/include/aarch64_syscall.h"
-#elif defined(__aarch64__)
+#elif defined(__x86_64__)
 #include "../module/include/x86_syscall.h"
 #endif
 
 int in_segment;
 int batch_num; /* number of busy entry */
 int syscall_num; /* number of syscall triggered currently */
+
+void* mpool; /* memory pool */
+ull pool_offset;
+struct iovec* iovpool; /* pool for iovector */
+ull iov_offset;
 
 /* declare shared table, pin user space addr. to kernel phy. addr by kmap */
 esca_table_t* table;
@@ -75,8 +80,6 @@ ssize_t shutdown(int fd, int how)
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
 
-    //printf("fill shutdown at table[%d].tables[%d][%d]\n", idx, i, j);
-
     table[idx].tables[i][j].sysnum = __ESCA_shutdown;
     table[idx].tables[i][j].nargs = 2;
     table[idx].tables[i][j].args[0] = fd;
@@ -86,13 +89,12 @@ ssize_t shutdown(int fd, int how)
 
     // status must be changed in the last !!
     esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
-    //printf("fill shutdown at [%d][%d]\n", toff, curindex[toff]);
 
     /* assume success */
     return 0;
 }
 
-#if 1
+#if 0
 off_t off_arr[MAX_CPU_NUM][MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1];
 ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
 {
@@ -118,7 +120,7 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
     off_arr[idx][i * MAX_TABLE_ENTRY + j] = *offset;
     //off_arr[i * MAX_TABLE_ENTRY + j] = *offset;
 
-    table[idx].tables[i][j].sysnum = 40;
+    table[idx].tables[i][j].sysnum = __ESCA_sendfile;
     table[idx].tables[i][j].nargs = 4;
     table[idx].tables[i][j].args[0] = out_fd;
     table[idx].tables[i][j].args[1] = in_fd;
@@ -137,7 +139,7 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
 }
 #endif
 
-#if 0
+#if 1
 ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
 {
 
@@ -152,54 +154,50 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
 #endif
     batch_num++;
 
+    ull start_iov_index;
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
 
     int len = 0;
-    for (int i = 0; i < iovcnt; i++) {
-        len += iov[i].iov_len;
-    }
-#if 0
-	int off, toff = /*(out_fd % 2)*/ + 1;
-    //off = 1 << 6; /* 6 = log64 */
-    off = toff << 6;
 
-    for(i = 0; i < iovcnt; i++){
-        int ll = iov[i].iov_len;
+    if (iov_offset + iovcnt >= MAX_POOL_IOV_SIZE)
+        iov_offset = 0;
+
+    start_iov_index = iov_offset;
+
+    for (int k = 0; k < iovcnt; k++) {
+        int ll = iov[k].iov_len; // number of bytes
 
         /* handle string */
-        if (pool_offset + (ll / POOL_UNIT) > MAX_POOL_SIZE)
+        if (pool_offset + (ull)(ll << 3) > MAX_POOL_SIZE)
             pool_offset = 0;
-        else
-            pool_offset += (ll / POOL_UNIT);
 
-        /* handle iovec */
-        if (iov_offset + 1 >= MAX_POOL_IOV_SIZE)
-            iov_offset = 0;
-        else
-            iov_offset++;
-        memcpy(mpool + pool_offset, iov[i].iov_base, ll);
+        memcpy((void*)((ull)mpool + pool_offset), iov[k].iov_base, ll);
 
-        iovpool[iov_offset].iov_base = mpool + pool_offset;
+        iovpool[iov_offset].iov_base = (void*)((ull)mpool + pool_offset);
         iovpool[iov_offset].iov_len = ll;
 
-        len += iov[i].iov_len;
+        /* update index of iovec array */
+        iov_offset++;
+
+        /* update offset of character pool */
+        pool_offset += (ull)(ll << 3);
+
+        len += ll;
     }
-#endif
-    //while(btable[off + curindex[toff]].rstatus == BENTRY_BUSY);
+
     table[idx].tables[i][j].sysnum = __NR_writev;
-    table[idx].tables[i][j].rstatus = BENTRY_BUSY;
     table[idx].tables[i][j].nargs = 3;
     table[idx].tables[i][j].args[0] = fd;
-    table[idx].tables[i][j].args[1] = iov; //(long)(iovpool + iov_offset - iovcnt + 1);
+    table[idx].tables[i][j].args[1] = (long)(&iovpool[start_iov_index]);
     table[idx].tables[i][j].args[2] = iovcnt;
 
     update_index(idx);
 
     // status must be changed in the last !!
     esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
+
     /* assume always success */
-    //printf("-> %d\n", len);
     return len;
 }
 #endif
@@ -213,6 +211,11 @@ __attribute__((constructor)) static void setup(void)
     in_segment = 0;
     batch_num = 0;
     syscall_num = 0;
+
+    mpool = (void*)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
+    pool_offset = 0;
+    iovpool = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
+    iov_offset = 0;
 
     table = (esca_table_t*)aligned_alloc(pgsize, pgsize);
 
@@ -238,12 +241,10 @@ __attribute__((constructor)) static void setup(void)
     //table[0].tables[0] = alloc_head1;
     //table[1].tables[0] = alloc_head2;
 
-#if 1
     for (i = 0; i < MAX_TABLE_LEN; i++) {
         table[0].tables[i] = alloc_head1 + i * MAX_TABLE_ENTRY;
     }
     for (i = 0; i < MAX_TABLE_LEN; i++) {
         table[1].tables[i] = alloc_head2 + i * MAX_TABLE_ENTRY;
     }
-#endif
 }

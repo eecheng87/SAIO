@@ -230,7 +230,6 @@ static int worker(void* arg)
                 printk("detect signal\n");
                 goto exit_worker;
             }
-#if 1
             // FIXME:
             if (!time_after(jiffies, timeout)) {
                 // still don't need to sleep
@@ -255,7 +254,6 @@ static int worker(void* arg)
             // condition satisfied, don't schedule
             finish_wait(&worker_wait[cur_cpuid], &wait);
             WRITE_ONCE(table[cur_cpuid].flags, table[cur_cpuid].flags & ~ESCA_WORKER_NEED_WAKEUP);
-#endif
         }
 
         head_index = (i * MAX_TABLE_ENTRY) + j;

@@ -22,6 +22,8 @@
 #include <sys/uio.h>
 #include <time.h>
 
+typedef unsigned long long ull;
+
 typedef long (*open_t)(const char* pathname, int flags, mode_t mode);
 open_t real_open;
 typedef long (*read_t)(int fd, void* buf, size_t count);
