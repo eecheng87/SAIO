@@ -371,12 +371,12 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
 
     // closure is important
     worker_task = create_io_thread_ptr(worker, 0, -1);
-    //worker_task2 = create_io_thread_ptr(worker, 0, -1);
+    worker_task2 = create_io_thread_ptr(worker, 0, -1);
     // worker_task3 = create_io_thread_ptr(worker, 0, -1);
     // worker_task4 = create_io_thread_ptr(worker, 0, -1);
 
     wake_up_new_task_ptr(worker_task);
-    //wake_up_new_task_ptr(worker_task2);
+    wake_up_new_task_ptr(worker_task2);
     // wake_up_new_task_ptr(worker_task3);
     // wake_up_new_task_ptr(worker_task4);
     return 0;
