@@ -224,7 +224,6 @@ static int worker(void* arg)
         int i = table[cur_cpuid].head_table;
         int j = table[cur_cpuid].head_entry;
         int head_index, tail_index;
-
         while (smp_load_acquire(&table[cur_cpuid].tables[i][j].rstatus) == BENTRY_EMPTY) {
             if (signal_pending(current)) {
                 printk("detect signal\n");
@@ -404,15 +403,7 @@ asmlinkage void sys_esca_wakeup(const struct __user pt_regs* regs)
 
 asmlinkage void sys_esca_wait(void)
 {
-    // printk("in sleep\n");
-    // TODO: make it more flexible
-    wait_event_interruptible(wq, (submitted[0] == 0) && (submitted[1] == 0));
-
-    // while(batch_table[0][1].sysnum != 0){
-    //	cond_resched();
-    //}
-    // printk("awake\n");
-    // cond_resched();
+    wait_event_interruptible(wq, 1);
 }
 
 static int __init lioo_init(void)
