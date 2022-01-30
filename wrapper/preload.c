@@ -1,4 +1,5 @@
 #include "preload.h"
+#include <sys/mman.h>
 
 #if defined(__aarch64__)
 #include "../module/include/aarch64_syscall.h"
@@ -7,8 +8,10 @@
 #endif
 
 int in_segment;
+int main_pid;
 int batch_num; /* number of busy entry */
 int syscall_num; /* number of syscall triggered currently */
+size_t pgsize;
 
 void* mpool; /* memory pool */
 ull pool_offset;
@@ -16,7 +19,37 @@ struct iovec* iovpool; /* pool for iovector */
 ull iov_offset;
 
 /* declare shared table, pin user space addr. to kernel phy. addr by kmap */
+int table_fd;
+int this_worker_id;
 esca_table_t* table;
+
+void init_worker(int pid)
+{
+    /* expect id = 0 ~ MAX_CPU_NUM - 1 */
+    /* FIXME: consider pid might not in sequence */
+    int id = pid - main_pid - 1;
+    this_worker_id = id;
+    printf("Create worker ID = %d\n", id);
+
+    if (id >= MAX_CPU_NUM) {
+        printf("[ERROR] Process exceed limit\n");
+        return;
+    }
+
+    /* access share variable b/w kernel and applications */
+    table = (esca_table_t*)mmap(0, pgsize, PROT_READ | PROT_WRITE,
+        MAP_SHARED | MAP_POPULATE, table_fd, 0);
+
+    /* allocate per-worker tables */
+    esca_table_entry_t* alloc = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
+
+    /* pin per-worker tables to kernel */
+    syscall(__NR_esca_register, table, alloc, id);
+
+    for (int i = 0; i < MAX_TABLE_LEN; i++) {
+        table[id].user_tables[i] = alloc + i * MAX_TABLE_ENTRY;
+    }
+}
 
 long batch_start()
 {
@@ -72,23 +105,25 @@ ssize_t shutdown(int fd, int how)
     // TODO: imple. hash function for table len. greater than 2 scenario
 #if 0
     int idx = 0;
-#else
+//#else
     int idx = fd & 1;
 #endif
+    int idx = this_worker_id;
+
     batch_num++;
 
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
 
-    table[idx].tables[i][j].sysnum = __ESCA_shutdown;
-    table[idx].tables[i][j].nargs = 2;
-    table[idx].tables[i][j].args[0] = fd;
-    table[idx].tables[i][j].args[1] = how;
+    table[idx].user_tables[i][j].sysnum = __ESCA_shutdown;
+    table[idx].user_tables[i][j].nargs = 2;
+    table[idx].user_tables[i][j].args[0] = fd;
+    table[idx].user_tables[i][j].args[1] = how;
 
     update_index(idx);
 
     // status must be changed in the last !!
-    esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
+    esca_smp_store_release(&table[idx].user_tables[i][j].rstatus, BENTRY_BUSY);
 
     /* assume success */
     return 0;
@@ -104,35 +139,30 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
     }
 #endif
 
-#if 0
-    int idx = 0;
-#else
-    int idx = out_fd & 1;
-#endif
+    int idx = this_worker_id;
     batch_num++;
 
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
     int off = (i << 6) + j;
 
-    //printf("sendfile(%d, %d, %d) off_arr[%d][%d] at table[%d].tables[%d][%d]\n", out_fd, in_fd, count, idx, i * MAX_TABLE_ENTRY + j, idx, i, j);
+    // printf("pid=%d, sendfile(%d, %d, %d) off_arr[%d][%d] at table[%d].tables[%d][%d]\n", getpid(), out_fd, in_fd, count, idx, i * MAX_TABLE_ENTRY + j, idx, i, j);
 
     off_arr[idx][i * MAX_TABLE_ENTRY + j] = *offset;
-    //off_arr[i * MAX_TABLE_ENTRY + j] = *offset;
 
-    table[idx].tables[i][j].sysnum = __ESCA_sendfile;
-    table[idx].tables[i][j].nargs = 4;
-    table[idx].tables[i][j].args[0] = out_fd;
-    table[idx].tables[i][j].args[1] = in_fd;
-    table[idx].tables[i][j].args[2] = &off_arr[idx][i * MAX_TABLE_ENTRY + j];
-    table[idx].tables[i][j].args[3] = count;
+    table[idx].user_tables[i][j].sysnum = __ESCA_sendfile;
+    table[idx].user_tables[i][j].nargs = 4;
+    table[idx].user_tables[i][j].args[0] = out_fd;
+    table[idx].user_tables[i][j].args[1] = in_fd;
+    table[idx].user_tables[i][j].args[2] = &off_arr[idx][i * MAX_TABLE_ENTRY + j];
+    table[idx].user_tables[i][j].args[3] = count;
 
     *offset = *offset + count;
     update_index(idx);
     // status must be changed in the last !!
     // maybe need to add barrier at here !!
 
-    esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
+    esca_smp_store_release(&table[idx].user_tables[i][j].rstatus, BENTRY_BUSY);
 
     /* assume success */
     return count;
@@ -145,11 +175,8 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
         return real_writev(fd, iov, iovcnt);
     }
     // TODO: imple. hash function for table len. greater than 2 scenario
-#if 1
-    int idx = 0;
-#else
-    int idx = fd & 1;
-#endif
+
+    int idx = this_worker_id;
     batch_num++;
 
     ull start_iov_index;
@@ -184,16 +211,16 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
         len += ll;
     }
 
-    table[idx].tables[i][j].sysnum = __NR_writev;
-    table[idx].tables[i][j].nargs = 3;
-    table[idx].tables[i][j].args[0] = fd;
-    table[idx].tables[i][j].args[1] = (long)(&iovpool[start_iov_index]);
-    table[idx].tables[i][j].args[2] = iovcnt;
+    table[idx].user_tables[i][j].sysnum = __NR_writev;
+    table[idx].user_tables[i][j].nargs = 3;
+    table[idx].user_tables[i][j].args[0] = fd;
+    table[idx].user_tables[i][j].args[1] = (long)(&iovpool[start_iov_index]);
+    table[idx].user_tables[i][j].args[2] = iovcnt;
 
     update_index(idx);
 
     // status must be changed in the last !!
-    esca_smp_store_release(&table[idx].tables[i][j].rstatus, BENTRY_BUSY);
+    esca_smp_store_release(&table[idx].user_tables[i][j].rstatus, BENTRY_BUSY);
 
     /* assume always success */
     return len;
@@ -203,25 +230,22 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
 __attribute__((constructor)) static void setup(void)
 {
     int i;
-    size_t pgsize = getpagesize();
     esca_table_entry_t* alloc_head1;
     esca_table_entry_t* alloc_head2;
+
     in_segment = 0;
     batch_num = 0;
     syscall_num = 0;
+    main_pid = getpid();
+    pgsize = getpagesize();
 
     mpool = (void*)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
     pool_offset = 0;
     iovpool = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
     iov_offset = 0;
 
-    table = (esca_table_t*)aligned_alloc(pgsize, pgsize);
-
-    // TODO: make this more flexible
-    alloc_head1 = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
-    alloc_head2 = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
-
-    // printf("alloc_head1 = %p, alloc_head2 = %p\n", alloc_head1, alloc_head2);
+    /* create anonymous fd and be visible backing of an esca instance */
+    table_fd = syscall(__NR_esca_register, NULL, NULL, 0);
 
     /* store glibc function */
     real_open = real_open ? real_open : dlsym(RTLD_NEXT, "open");
@@ -231,18 +255,4 @@ __attribute__((constructor)) static void setup(void)
     real_writev = real_writev ? real_writev : dlsym(RTLD_NEXT, "writev");
     real_shutdown = real_shutdown ? real_shutdown : dlsym(RTLD_NEXT, "shutdown");
     real_sendfile = real_sendfile ? real_sendfile : dlsym(RTLD_NEXT, "sendfile");
-
-    syscall(__NR_esca_register, table, alloc_head1, alloc_head2);
-
-    /* Need to be assigned after kmap from kernel */
-    /* TODO: maybe this can be shorten */
-    //table[0].tables[0] = alloc_head1;
-    //table[1].tables[0] = alloc_head2;
-
-    for (i = 0; i < MAX_TABLE_LEN; i++) {
-        table[0].tables[i] = alloc_head1 + i * MAX_TABLE_ENTRY;
-    }
-    for (i = 0; i < MAX_TABLE_LEN; i++) {
-        table[1].tables[i] = alloc_head2 + i * MAX_TABLE_ENTRY;
-    }
 }

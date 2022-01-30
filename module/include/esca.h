@@ -50,7 +50,8 @@ typedef struct esca_table_entry {
 } esca_table_entry_t;
 
 typedef struct esca_table {
-    esca_table_entry_t* tables[MAX_TABLE_LEN];
+    esca_table_entry_t* tables[MAX_TABLE_LEN]; // shared b/t kernel and user (in kernel address space)
+    esca_table_entry_t* user_tables[MAX_TABLE_LEN]; // shared b/t kernel and user (in usr address space)
     short head_table; // entry for consumer
     short tail_table; // entry for producer
     short head_entry;
