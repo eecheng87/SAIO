@@ -1,6 +1,15 @@
---- old/lighttpd1.4-lighttpd-1.4.56/src/server.c	2020-12-28 11:42:56.000000000 +0800
-+++ new/lighttpd1.4-lighttpd-1.4.56/src/server.c	2021-11-04 13:35:13.666313986 +0800
-@@ -1914,7 +1914,7 @@
+diff --color -Naur old/server.c new/server.c
+--- old/server.c	2020-11-30 05:31:14.000000000 +0800
++++ new/server.c	2022-02-02 15:17:33.789539164 +0800
+@@ -1547,6 +1547,7 @@
+ 					return -1;
+ 				case 0:
+ 					child = 1;
++					init_worker(getpid());
+ 					alarm(0);
+ 					break;
+ 				default:
+@@ -1904,7 +1905,7 @@
  		}
  
  		connections * const joblist = connection_joblist;
@@ -9,7 +18,7 @@
  		if (fdevent_poll(srv->ev, joblist->used ? 0 : 1000) > 0) {
  			last_active_ts = log_epoch_secs;
  		}
-@@ -1924,6 +1924,7 @@
+@@ -1914,6 +1915,7 @@
  		  : &srv->joblist_A;
  
  		server_run_con_queue(joblist);
