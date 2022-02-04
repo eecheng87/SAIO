@@ -25,23 +25,34 @@ esca_table_t* table;
 
 void init_worker(int pid)
 {
+    in_segment = 0;
+    batch_num = 0;
+    syscall_num = 0;
     /* expect id = 0 ~ MAX_CPU_NUM - 1 */
     /* FIXME: consider pid might not in sequence */
     int id = pid - main_pid - 1;
     this_worker_id = id;
-    printf("Create worker ID = %d\n", id);
+    printf("Create worker ID = %d, using fd = %d\n", id, table_fd);
 
     if (id >= MAX_CPU_NUM) {
         printf("[ERROR] Process exceed limit\n");
-        return;
+        goto init_worker_exit;
     }
 
     /* access share variable b/w kernel and applications */
     table = (esca_table_t*)mmap(0, pgsize, PROT_READ | PROT_WRITE,
         MAP_SHARED | MAP_POPULATE, table_fd, 0);
+    if (table == MAP_FAILED) {
+        printf("[ERROR] mmap failed\n");
+        goto init_worker_exit;
+    }
 
     /* allocate per-worker tables */
     esca_table_entry_t* alloc = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
+    if (!alloc) {
+        printf("[ERROR] alloc failed\n");
+        goto init_worker_exit;
+    }
 
     /* pin per-worker tables to kernel */
     syscall(__NR_esca_register, table, alloc, id);
@@ -49,18 +60,19 @@ void init_worker(int pid)
     for (int i = 0; i < MAX_TABLE_LEN; i++) {
         table[id].user_tables[i] = alloc + i * MAX_TABLE_ENTRY;
     }
+init_worker_exit:
+    return;
 }
 
 long batch_start()
 {
+    int i = this_worker_id;
     in_segment = 1;
 
-    for (int i = 0; i < MAX_CPU_NUM; i++) {
-        if (esca_unlikely(ESCA_READ_ONCE(table[i].flags) & ESCA_WORKER_NEED_WAKEUP)) {
-            table[i].flags |= ESCA_START_WAKEUP;
-            syscall(__NR_esca_wakeup, i);
-            table[i].flags &= ~ESCA_START_WAKEUP;
-        }
+    if (esca_unlikely(ESCA_READ_ONCE(table[i].flags) & ESCA_WORKER_NEED_WAKEUP)) {
+        table[i].flags |= ESCA_START_WAKEUP;
+        syscall(__NR_esca_wakeup, i);
+        table[i].flags &= ~ESCA_START_WAKEUP;
     }
 
     return 0;
@@ -68,12 +80,11 @@ long batch_start()
 
 long batch_flush()
 {
-
     in_segment = 0;
     if (batch_num == 0)
         return 0;
 
-    syscall(__NR_esca_wait);
+    syscall(__NR_esca_wait, this_worker_id);
     batch_num = 0;
 
     return 0;
@@ -229,13 +240,6 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
 
 __attribute__((constructor)) static void setup(void)
 {
-    int i;
-    esca_table_entry_t* alloc_head1;
-    esca_table_entry_t* alloc_head2;
-
-    in_segment = 0;
-    batch_num = 0;
-    syscall_num = 0;
     main_pid = getpid();
     pgsize = getpagesize();
 

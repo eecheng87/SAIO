@@ -57,6 +57,7 @@ static int worker(void* arg);
 
 // TODO: encapsulate them
 wait_queue_head_t worker_wait[MAX_CPU_NUM];
+wait_queue_head_t wq[MAX_CPU_NUM];
 // int flags[MAX_CPU_NUM]; // need_wake_up; this might be shared with user space (be aware of memory barrier)
 
 typedef asmlinkage long (*F0_t)(void);
@@ -67,12 +68,7 @@ typedef asmlinkage long (*F4_t)(long, long, long, long);
 typedef asmlinkage long (*F5_t)(long, long, long, long, long);
 typedef asmlinkage long (*F6_t)(long, long, long, long, long, long);
 
-static struct task_struct* worker_task;
-static struct task_struct* worker_task2;
-static struct task_struct* worker_task3;
-static struct task_struct* worker_task4;
-
-static DECLARE_WAIT_QUEUE_HEAD(wq);
+static struct task_struct* worker_task[MAX_CPU_NUM];
 
 // void (*wake_up_new_task_ptr)(struct task_struct *) = 0;
 
@@ -213,19 +209,15 @@ static void disable_cycle_counter_el0(void* data)
 #endif
 
 char* buf;
-int global_cur_id;
-
-static int get_next_id(void)
-{
-    return global_cur_id++;
-}
 
 static int worker(void* arg)
 {
     allow_signal(SIGKILL);
-    int cur_cpuid = get_next_id();
+    int cur_cpuid = ((esca_wkr_args_t*)arg)->id;
     set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
     unsigned long timeout = 0;
+
+    init_waitqueue_head(&wq[cur_cpuid]);
 
     DEFINE_WAIT(wait);
 
@@ -283,7 +275,7 @@ static int worker(void* arg)
             // FIXME: need barrier?
             table[cur_cpuid].tables[i][j].rstatus = BENTRY_EMPTY;
 
-#if 1
+#if 0
             printk(KERN_INFO "Index %d,%d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", i, j,
                 table[cur_cpuid].tables[i][j].sysnum, table[cur_cpuid].tables[i][j].sysret, table[cur_cpuid].tables[i][j].args[0],
                 table[cur_cpuid].tables[i][j].args[1], table[cur_cpuid].tables[i][j].args[2],
@@ -298,7 +290,7 @@ static int worker(void* arg)
             }
 
             submitted[cur_cpuid]--;
-
+#if 0
             short done = 1;
             for (int k = 0; k < MAX_CPU_NUM; k++) {
                 if (submitted[k] != 0) {
@@ -306,10 +298,10 @@ static int worker(void* arg)
                     break;
                 }
             }
-
-            if (done == 1) {
+#endif
+            if (submitted[cur_cpuid] == 0) {
                 // TODO: make sure this only be executed one time
-                wake_up_interruptible(&wq);
+                wake_up_interruptible(&wq[cur_cpuid]);
             }
 
             timeout = jiffies + table[cur_cpuid].idle_time;
@@ -362,6 +354,10 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     // FIXME: check if p1[0] is needed
     struct file* file;
     int n_page, id = p1[2], fd;
+    esca_wkr_args_t* args;
+
+    args = (esca_wkr_args_t*)kmalloc(sizeof(esca_wkr_args_t), GFP_KERNEL);
+    args->id = id;
 
     if (p1[0] == 0 && p1[1] == 0) {
         /* allocate pages for table */
@@ -381,6 +377,7 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     n_page = get_user_pages((unsigned long)(p1[1]), MAX_TABLE_LEN,
         FOLL_FORCE | FOLL_WRITE, table_pinned_pages[id],
         NULL);
+    printk("Pin %d pages in worker %d\n", n_page, id);
 
     for (int j = 0; j < MAX_TABLE_LEN; j++) {
         table[id].tables[j] = (esca_table_entry_t*)kmap(table_pinned_pages[id][j]);
@@ -403,7 +400,8 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     init_waitqueue_head(&worker_wait[id]);
 
     // closure is important
-    wake_up_new_task_ptr(create_io_thread_ptr(worker, 0, -1));
+    worker_task[id] = create_io_thread_ptr(worker, args, -1);
+    wake_up_new_task_ptr(worker_task[id]);
 
     return 0;
 }
@@ -411,9 +409,11 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
 asmlinkage void sys_lioo_exit(void)
 {
     printk(KERN_INFO "syscall exit\n");
-    if (worker_task)
-        kthread_stop(worker_task);
-    worker_task = NULL;
+    for (int i = 0; i < MAX_CPU_NUM; i++) {
+        if (worker_task[i])
+            kthread_stop(worker_task[i]);
+        worker_task[i] = NULL;
+    }
 }
 
 asmlinkage void sys_esca_wakeup(const struct __user pt_regs* regs)
@@ -429,9 +429,14 @@ asmlinkage void sys_esca_wakeup(const struct __user pt_regs* regs)
     }
 }
 
-asmlinkage void sys_esca_wait(void)
+asmlinkage void sys_esca_wait(const struct __user pt_regs* regs)
 {
-    wait_event_interruptible(wq, 1);
+#if defined(__x86_64__)
+    int idx = regs->di;
+#elif defined(__aarch64__)
+    int idx = regs->regs[0];
+#endif
+    wait_event_interruptible(wq[idx], 1);
 }
 
 static int __init lioo_init(void)
@@ -443,7 +448,6 @@ static int __init lioo_init(void)
     init_mm_ptr = (struct mm_struct*)(sysMM + ((char*)&system_wq - sysWQ));
     on_each_cpu(enable_cycle_counter_el0, NULL, 1);
 #endif
-    global_cur_id = 0;
 
     /* allow write */
     allow_writes();

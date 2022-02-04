@@ -60,6 +60,10 @@ typedef struct esca_table {
     unsigned int flags;
 } esca_table_t;
 
+typedef struct esca_wkr_args {
+    int id;
+} esca_wkr_args_t;
+
 /* store in first entry of each esca_table */
 
 #if 0
