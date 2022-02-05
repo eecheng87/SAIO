@@ -49,7 +49,7 @@ int main_pid; /* PID of main thread */
 /* declare shared table */
 struct page* table_pinned_pages[MAX_CPU_NUM][MAX_TABLE_LEN];
 struct page* shared_info_pinned_pages[1];
-esca_table_t* table;
+esca_table_t* table[MAX_CPU_NUM];
 //esca_table_t* local_table[MAX_CPU_NUM];
 short submitted[MAX_CPU_NUM];
 
@@ -214,7 +214,7 @@ static int worker(void* arg)
 {
     allow_signal(SIGKILL);
     int cur_cpuid = ((esca_wkr_args_t*)arg)->id;
-    set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
+    // set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
     unsigned long timeout = 0;
 
     init_waitqueue_head(&wq[cur_cpuid]);
@@ -225,11 +225,11 @@ static int worker(void* arg)
         current->pid, smp_processor_id(), cur_cpuid);
 
     while (1) {
-        int i = table[cur_cpuid].head_table;
-        int j = table[cur_cpuid].head_entry;
+        int i = table[cur_cpuid]->head_table;
+        int j = table[cur_cpuid]->head_entry;
         int head_index, tail_index;
 
-        while (smp_load_acquire(&table[cur_cpuid].tables[i][j].rstatus) == BENTRY_EMPTY) {
+        while (smp_load_acquire(&table[cur_cpuid]->tables[i][j].rstatus) == BENTRY_EMPTY) {
             if (signal_pending(current)) {
                 printk("detect signal\n");
                 goto exit_worker;
@@ -242,44 +242,44 @@ static int worker(void* arg)
             }
 
             prepare_to_wait(&worker_wait[cur_cpuid], &wait, TASK_INTERRUPTIBLE);
-            WRITE_ONCE(table[cur_cpuid].flags, table[cur_cpuid].flags | ESCA_WORKER_NEED_WAKEUP);
+            WRITE_ONCE(table[cur_cpuid]->flags, table[cur_cpuid]->flags | ESCA_WORKER_NEED_WAKEUP);
 
-            if (smp_load_acquire(&table[cur_cpuid].tables[i][j].rstatus) == BENTRY_EMPTY) {
+            if (smp_load_acquire(&table[cur_cpuid]->tables[i][j].rstatus) == BENTRY_EMPTY) {
                 schedule();
                 // wake up by `wake_up` in batch_start
                 finish_wait(&worker_wait[cur_cpuid], &wait);
 
                 // clear need_wakeup
                 // FIXME: // need write barrier?
-                WRITE_ONCE(table[cur_cpuid].flags, table[cur_cpuid].flags & ~ESCA_WORKER_NEED_WAKEUP);
+                WRITE_ONCE(table[cur_cpuid]->flags, table[cur_cpuid]->flags & ~ESCA_WORKER_NEED_WAKEUP);
                 continue;
             }
 
             // condition satisfied, don't schedule
             finish_wait(&worker_wait[cur_cpuid], &wait);
-            WRITE_ONCE(table[cur_cpuid].flags, table[cur_cpuid].flags & ~ESCA_WORKER_NEED_WAKEUP);
+            WRITE_ONCE(table[cur_cpuid]->flags, table[cur_cpuid]->flags & ~ESCA_WORKER_NEED_WAKEUP);
         }
 
         head_index = (i * MAX_TABLE_ENTRY) + j;
-        tail_index = (table[cur_cpuid].tail_table * MAX_TABLE_ENTRY) + table[cur_cpuid].tail_entry;
+        tail_index = (table[cur_cpuid]->tail_table * MAX_TABLE_ENTRY) + table[cur_cpuid]->tail_entry;
         submitted[cur_cpuid] = (tail_index >= head_index)
             ? tail_index - head_index
             : MAX_TABLE_ENTRY * MAX_TABLE_LEN - head_index + tail_index;
 
         while (submitted[cur_cpuid] != 0) {
-            table[cur_cpuid].tables[i][j].sysret = indirect_call(
-                syscall_table_ptr[table[cur_cpuid].tables[i][j].sysnum],
-                table[cur_cpuid].tables[i][j].nargs,
-                table[cur_cpuid].tables[i][j].args);
+            table[cur_cpuid]->tables[i][j].sysret = indirect_call(
+                syscall_table_ptr[table[cur_cpuid]->tables[i][j].sysnum],
+                table[cur_cpuid]->tables[i][j].nargs,
+                table[cur_cpuid]->tables[i][j].args);
 
             // FIXME: need barrier?
-            table[cur_cpuid].tables[i][j].rstatus = BENTRY_EMPTY;
+            table[cur_cpuid]->tables[i][j].rstatus = BENTRY_EMPTY;
 
 #if 0
             printk(KERN_INFO "Index %d,%d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", i, j,
-                table[cur_cpuid].tables[i][j].sysnum, table[cur_cpuid].tables[i][j].sysret, table[cur_cpuid].tables[i][j].args[0],
-                table[cur_cpuid].tables[i][j].args[1], table[cur_cpuid].tables[i][j].args[2],
-                table[cur_cpuid].tables[i][j].args[3], smp_processor_id());
+                table[cur_cpuid]->tables[i][j].sysnum, table[cur_cpuid]->tables[i][j].sysret, table[cur_cpuid]->tables[i][j].args[0],
+                table[cur_cpuid]->tables[i][j].args[1], table[cur_cpuid]->tables[i][j].args[2],
+                table[cur_cpuid]->tables[i][j].args[3], smp_processor_id());
 #endif
 
             if (j == MAX_TABLE_ENTRY - 1) {
@@ -304,10 +304,10 @@ static int worker(void* arg)
                 wake_up_interruptible(&wq[cur_cpuid]);
             }
 
-            timeout = jiffies + table[cur_cpuid].idle_time;
+            timeout = jiffies + table[cur_cpuid]->idle_time;
         }
-        table[cur_cpuid].head_table = i;
-        table[cur_cpuid].head_entry = j;
+        table[cur_cpuid]->head_table = i;
+        table[cur_cpuid]->head_entry = j;
 
         if (signal_pending(current)) {
             printk("detect signal\n");
@@ -319,27 +319,6 @@ exit_worker:
     do_exit(0);
     return 0;
 }
-
-static int esca_mmap(struct file* file, struct vm_area_struct* vma)
-{
-    loff_t offset = (loff_t)vma->vm_pgoff << PAGE_SHIFT;
-    unsigned long sz = vma->vm_end - vma->vm_start;
-    esca_table_t* table = file->private_data;
-    unsigned long pfn;
-    struct page* page;
-    void* ptr = table;
-
-    page = virt_to_head_page(ptr);
-    if (sz > (PAGE_SIZE << compound_order(page)))
-        return -EINVAL;
-
-    pfn = virt_to_phys(ptr) >> PAGE_SHIFT;
-    return remap_pfn_range(vma, vma->vm_start, pfn, sz, vma->vm_page_prot);
-}
-
-static const struct file_operations esca_fops = {
-    .mmap = esca_mmap
-};
 
 /* after linux kernel 4.7, parameter was restricted into pt_regs type */
 asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
@@ -356,22 +335,9 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     int n_page, id = p1[2], fd;
     esca_wkr_args_t* args;
 
+    // FIXME: release
     args = (esca_wkr_args_t*)kmalloc(sizeof(esca_wkr_args_t), GFP_KERNEL);
     args->id = id;
-
-    if (p1[0] == 0 && p1[1] == 0) {
-        /* allocate pages for table */
-        gfp_t gfp_flags = GFP_KERNEL | __GFP_ZERO | __GFP_NOWARN | __GFP_COMP | __GFP_NORETRY;
-        /* in virtual address space */
-        table = (esca_table_t*)__get_free_pages(gfp_flags, get_order(PAGE_SIZE));
-
-        /* create anonymous fd and be visible backing of an esca instance */
-        fd = get_unused_fd_flags(O_RDWR | O_CLOEXEC);
-        file = anon_inode_getfile("[ESCA]", &esca_fops, table, O_RDWR | O_CLOEXEC);
-        fd_install(fd, file);
-
-        return fd;
-    }
 
     /* map batch table from user-space to kernel */
     n_page = get_user_pages((unsigned long)(p1[1]), MAX_TABLE_LEN,
@@ -379,24 +345,29 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
         NULL);
     printk("Pin %d pages in worker %d\n", n_page, id);
 
+    n_page = get_user_pages((unsigned long)(p1[0]), 1, FOLL_FORCE | FOLL_WRITE,
+        shared_info_pinned_pages, NULL);
+
+    table[id] = (esca_table_t*)kmap(shared_info_pinned_pages[0]);
+
     for (int j = 0; j < MAX_TABLE_LEN; j++) {
-        table[id].tables[j] = (esca_table_entry_t*)kmap(table_pinned_pages[id][j]);
-        printk("table[%d][%d]=%p\n", id, j, table[id].tables[j]);
+        table[id]->tables[j] = (esca_table_entry_t*)kmap(table_pinned_pages[id][j]);
+        printk("table[%d][%d]=%p\n", id, j, table[id]->tables[j]);
     }
 
     /* initial entry status */
     for (int j = 0; j < MAX_TABLE_LEN; j++)
         for (int k = 0; k < MAX_TABLE_ENTRY; k++)
-            table[id].tables[j][k].rstatus = BENTRY_EMPTY;
+            table[id]->tables[j][k].rstatus = BENTRY_EMPTY;
 
     // TODO: merge them
-    table[id].head_table = table[id].tail_table = 0;
-    table[id].head_entry = table[id].tail_entry = 0;
+    table[id]->head_table = table[id]->tail_table = 0;
+    table[id]->head_entry = table[id]->tail_entry = 0;
 
     // TODO: merge them
     submitted[id] = 0;
-    table[id].flags = 0;
-    table[id].idle_time = msecs_to_jiffies(DEFAULT_IDLE_TIME);
+    table[id]->flags = 0;
+    table[id]->idle_time = msecs_to_jiffies(DEFAULT_IDLE_TIME);
     init_waitqueue_head(&worker_wait[id]);
 
     // closure is important
@@ -424,7 +395,7 @@ asmlinkage void sys_esca_wakeup(const struct __user pt_regs* regs)
     int i = regs->regs[0];
 #endif
 
-    if (likely(READ_ONCE(table[i].flags) & ESCA_START_WAKEUP)) {
+    if (likely(READ_ONCE(table[i]->flags) & ESCA_START_WAKEUP)) {
         wake_up(&worker_wait[i]);
     }
 }
