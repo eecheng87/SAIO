@@ -20,6 +20,8 @@ ull iov_offset;
 
 /* declare shared table, pin user space addr. to kernel phy. addr by kmap */
 int this_worker_id;
+
+/* user worker can't touch worker's table in diff. set */
 esca_table_t* table[MAX_CPU_NUM];
 
 void init_worker(int pid)
@@ -27,33 +29,44 @@ void init_worker(int pid)
     in_segment = 0;
     batch_num = 0;
     syscall_num = 0;
-    /* expect id = 0 ~ MAX_CPU_NUM - 1 */
+
+    /* expect id = 0 ~ MAX_USR_WORKER - 1 */
     /* FIXME: consider pid might not in sequence */
     int id = pid - main_pid - 1;
     this_worker_id = id;
 
     printf("Create worker ID = %d, pid = %d\n", id, getpid());
 
-    if (id >= MAX_CPU_NUM) {
+    if (id >= MAX_USR_WORKER) {
         printf("[ERROR] Process exceed limit\n");
         goto init_worker_exit;
     }
 
-    table[id] = (esca_table_t*)aligned_alloc(pgsize, pgsize);
+    int set_index = 0;
+    for (int i = id * RATIO; i < id * RATIO + RATIO; i++) {
+        /* headers in same set using a same page */
+        esca_table_t* header = NULL;
+        if (i == id * RATIO) {
+            header = table[i] = (esca_table_t*)aligned_alloc(pgsize, pgsize);
+        }
+        table[i] = table[id * RATIO] + (i - id * RATIO);
 
-    /* allocate per-worker tables */
-    esca_table_entry_t* alloc = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
-    if (!alloc) {
-        printf("[ERROR] alloc failed\n");
-        goto init_worker_exit;
+        /* allocate tables */
+        esca_table_entry_t* alloc = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
+        if (!alloc) {
+            printf("[ERROR] alloc failed\n");
+            goto init_worker_exit;
+        }
+
+        /* pin tables to kernel */
+        syscall(__NR_esca_register, header, alloc, i, set_index++);
+
+        /* pin table from kernel to user */
+        for (int j = 0; j < MAX_TABLE_LEN; j++) {
+            table[i]->user_tables[j] = alloc + j * MAX_TABLE_ENTRY;
+        }
     }
 
-    /* pin per-worker tables to kernel */
-    syscall(__NR_esca_register, table[id], alloc, id);
-
-    for (int i = 0; i < MAX_TABLE_LEN; i++) {
-        table[id]->user_tables[i] = alloc + i * MAX_TABLE_ENTRY;
-    }
 init_worker_exit:
     return;
 }
@@ -63,10 +76,12 @@ long batch_start()
     int i = this_worker_id;
     in_segment = 1;
 
-    if (esca_unlikely(ESCA_READ_ONCE(table[i]->flags) & ESCA_WORKER_NEED_WAKEUP)) {
-        table[i]->flags |= ESCA_START_WAKEUP;
-        syscall(__NR_esca_wakeup, i);
-        table[i]->flags &= ~ESCA_START_WAKEUP;
+    for (int j = i * RATIO; j < i * RATIO + RATIO; j++) {
+        if (esca_unlikely(ESCA_READ_ONCE(table[j]->flags) & ESCA_WORKER_NEED_WAKEUP)) {
+            table[j]->flags |= ESCA_START_WAKEUP;
+            syscall(__NR_esca_wakeup, j);
+            table[j]->flags &= ~ESCA_START_WAKEUP;
+        }
     }
 
     return 0;
@@ -78,7 +93,7 @@ long batch_flush()
     if (batch_num == 0)
         return 0;
 
-    syscall(__NR_esca_wait, this_worker_id);
+    syscall(__NR_esca_wait, this_worker_id * RATIO);
     batch_num = 0;
 
     return 0;
@@ -113,14 +128,14 @@ ssize_t shutdown(int fd, int how)
 //#else
     int idx = fd & 1;
 #endif
-    int idx = this_worker_id;
+    int idx = this_worker_id * RATIO + (fd % RATIO);
 
     batch_num++;
 
     int i = table[idx]->tail_table;
     int j = table[idx]->tail_entry;
 
-    // printf("pid=%d, shutdown(%d)", getpid(), fd);
+    //printf("pid=%d, shutdown(%d)", getpid(), fd);
 
     table[idx]->user_tables[i][j].sysnum = __ESCA_shutdown;
     table[idx]->user_tables[i][j].nargs = 2;
@@ -136,7 +151,7 @@ ssize_t shutdown(int fd, int how)
     return 0;
 }
 
-#if 1
+#if 0
 off_t off_arr[MAX_CPU_NUM][MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1];
 ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
 {
@@ -146,14 +161,14 @@ ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
     }
 #endif
 
-    int idx = this_worker_id;
+    int idx = this_worker_id * RATIO + (out_fd % RATIO);
     batch_num++;
 
     int i = table[idx]->tail_table;
     int j = table[idx]->tail_entry;
     int off = (i << 6) + j;
 
-    // printf("pid=%d, sendfile(%d, %d, %d) off_arr[%d][%d] at table[%d].tables[%d][%d]\n", getpid(), out_fd, in_fd, count, idx, i * MAX_TABLE_ENTRY + j, idx, i, j);
+    // printf("pid = %d, sendfile(%d, %d, %d) off_arr[%d][%d] at table[%d].tables[%d][%d]\n", getpid(), out_fd, in_fd, count, idx, i * MAX_TABLE_ENTRY + j, idx, i, j);
 
     off_arr[idx][i * MAX_TABLE_ENTRY + j] = *offset;
 
@@ -183,7 +198,7 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
     }
     // TODO: imple. hash function for table len. greater than 2 scenario
 
-    int idx = this_worker_id;
+    int idx = this_worker_id * RATIO + (fd % RATIO);
     batch_num++;
 
     ull start_iov_index;

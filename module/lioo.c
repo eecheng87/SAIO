@@ -290,18 +290,19 @@ static int worker(void* arg)
             }
 
             submitted[cur_cpuid]--;
-#if 0
+
             short done = 1;
-            for (int k = 0; k < MAX_CPU_NUM; k++) {
-                if (submitted[k] != 0) {
-                    done = 0;
-                    break;
+            if (cur_cpuid % RATIO == 0) {
+                for (int k = cur_cpuid; k < cur_cpuid + RATIO; k++) {
+                    if (submitted[k] != 0) {
+                        done = 0;
+                        break;
+                    }
                 }
-            }
-#endif
-            if (submitted[cur_cpuid] == 0) {
-                // TODO: make sure this only be executed one time
-                wake_up_interruptible(&wq[cur_cpuid]);
+                if (done == 1) {
+                    // TODO: make sure this only be executed one time
+                    wake_up_interruptible(&wq[cur_cpuid]);
+                }
             }
 
             timeout = jiffies + table[cur_cpuid]->idle_time;
@@ -323,32 +324,43 @@ exit_worker:
 /* after linux kernel 4.7, parameter was restricted into pt_regs type */
 asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
 {
-    // regs should contain: table, alloc_head[id], id
+    // regs should contain: header, user_tables, id, set_index
 #if defined(__x86_64__)
-    unsigned long p1[3] = { regs->di, regs->si, regs->dx };
+    unsigned long p1[4] = { regs->di, regs->si, regs->dx, regs->r10 };
 #elif defined(__aarch64__)
-    unsigned long p1[3] = { regs->regs[0], regs->regs[1], regs->regs[2] };
+    unsigned long p1[4] = { regs->regs[0], regs->regs[1], regs->regs[2], regs->regs[3] };
 #endif
 
     // FIXME: check if p1[0] is needed
     struct file* file;
-    int n_page, id = p1[2], fd;
+    int n_page, id = p1[2], fd, set_index = p1[3];
     esca_wkr_args_t* args;
 
     // FIXME: release
     args = (esca_wkr_args_t*)kmalloc(sizeof(esca_wkr_args_t), GFP_KERNEL);
     args->id = id;
 
-    /* map batch table from user-space to kernel */
+    if (p1[0]) {
+        /* header is not null */
+        n_page = get_user_pages((unsigned long)(p1[0]), 1, FOLL_FORCE | FOLL_WRITE,
+            shared_info_pinned_pages, NULL);
+
+        esca_table_t* header = (esca_table_t*)kmap(shared_info_pinned_pages[0]);
+        for (int i = id; i < id + RATIO; i++) {
+            table[i] = header + i - id;
+        }
+    } else {
+        /* make sure header has been register */
+        while (!table[id]) {
+            cond_resched();
+        }
+    }
+
+    /* map tables from user-space to kernel */
     n_page = get_user_pages((unsigned long)(p1[1]), MAX_TABLE_LEN,
         FOLL_FORCE | FOLL_WRITE, table_pinned_pages[id],
         NULL);
     printk("Pin %d pages in worker %d\n", n_page, id);
-
-    n_page = get_user_pages((unsigned long)(p1[0]), 1, FOLL_FORCE | FOLL_WRITE,
-        shared_info_pinned_pages, NULL);
-
-    table[id] = (esca_table_t*)kmap(shared_info_pinned_pages[0]);
 
     for (int j = 0; j < MAX_TABLE_LEN; j++) {
         table[id]->tables[j] = (esca_table_entry_t*)kmap(table_pinned_pages[id][j]);
