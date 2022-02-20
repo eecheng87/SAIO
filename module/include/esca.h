@@ -10,8 +10,8 @@
 
 #define MAX_TABLE_ENTRY 64
 #define MAX_TABLE_LEN 1
-#define MAX_USR_WORKER 2
-#define MAX_CPU_NUM 4
+#define MAX_USR_WORKER 4
+#define MAX_CPU_NUM 8
 #define RATIO (MAX_CPU_NUM / MAX_USR_WORKER)
 #define DEFAULT_IDLE_TIME 1500 /* in msec */
 

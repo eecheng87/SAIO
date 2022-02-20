@@ -24,32 +24,30 @@ int this_worker_id;
 /* user worker can't touch worker's table in diff. set */
 esca_table_t* table[MAX_CPU_NUM];
 
-void init_worker(int pid)
+void init_worker(int idx)
 {
     in_segment = 0;
     batch_num = 0;
     syscall_num = 0;
 
-    /* expect id = 0 ~ MAX_USR_WORKER - 1 */
-    /* FIXME: consider pid might not in sequence */
-    int id = pid - main_pid - 1;
-    this_worker_id = id;
+    /* expect idx = 0 ~ MAX_USR_WORKER - 1 */
+    this_worker_id = idx;
 
-    printf("Create worker ID = %d, pid = %d\n", id, getpid());
+    printf("Create worker ID = %d, pid = %d\n", this_worker_id, getpid());
 
-    if (id >= MAX_USR_WORKER) {
+    if (idx >= MAX_USR_WORKER) {
         printf("[ERROR] Process exceed limit\n");
         goto init_worker_exit;
     }
 
     int set_index = 0;
-    for (int i = id * RATIO; i < id * RATIO + RATIO; i++) {
+    for (int i = idx * RATIO; i < idx * RATIO + RATIO; i++) {
         /* headers in same set using a same page */
         esca_table_t* header = NULL;
-        if (i == id * RATIO) {
+        if (i == idx * RATIO) {
             header = table[i] = (esca_table_t*)aligned_alloc(pgsize, pgsize);
         }
-        table[i] = table[id * RATIO] + (i - id * RATIO);
+        table[i] = table[idx * RATIO] + (i - idx * RATIO);
 
         /* allocate tables */
         esca_table_entry_t* alloc = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
