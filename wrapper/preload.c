@@ -65,6 +65,11 @@ void init_worker(int idx)
         }
     }
 
+    mpool = (void*)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
+    pool_offset = 0;
+    iovpool = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
+    iov_offset = 0;
+
 init_worker_exit:
     return;
 }
@@ -214,7 +219,7 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
         int ll = iov[k].iov_len; // number of bytes
 
         /* handle string */
-        if (pool_offset + (ull)(ll << 3) > MAX_POOL_SIZE)
+        if (pool_offset + (ull)(ll) > MAX_POOL_SIZE)
             pool_offset = 0;
 
         memcpy((void*)((ull)mpool + pool_offset), iov[k].iov_base, ll);
@@ -226,7 +231,7 @@ ssize_t writev(int fd, const struct iovec* iov, int iovcnt)
         iov_offset++;
 
         /* update offset of character pool */
-        pool_offset += (ull)(ll << 3);
+        pool_offset += (ull)(ll);
 
         len += ll;
     }
@@ -251,11 +256,6 @@ __attribute__((constructor)) static void setup(void)
 {
     main_pid = getpid();
     pgsize = getpagesize();
-
-    mpool = (void*)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
-    pool_offset = 0;
-    iovpool = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
-    iov_offset = 0;
 
     /* store glibc function */
     real_open = real_open ? real_open : dlsym(RTLD_NEXT, "open");
