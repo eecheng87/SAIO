@@ -151,7 +151,7 @@ ssize_t shutdown(int fd, int how)
     return 0;
 }
 
-#if 0
+#if 1
 off_t off_arr[MAX_CPU_NUM][MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1];
 ssize_t sendfile64(int out_fd, int in_fd, off_t* offset, size_t count)
 {

@@ -1,6 +1,6 @@
 diff --color -Naur old/server.c new/server.c
---- old/server.c	2020-11-30 05:31:14.000000000 +0800
-+++ new/server.c	2022-02-02 15:17:33.789539164 +0800
+--- old/lighttpd1.4-lighttpd-1.4.56/src/server.c	2020-11-30 05:31:14.000000000 +0800
++++ new/lighttpd1.4-lighttpd-1.4.56/src/server.c	2022-02-02 15:17:33.789539164 +0800
 @@ -1547,6 +1547,7 @@
  					return -1;
  				case 0:
