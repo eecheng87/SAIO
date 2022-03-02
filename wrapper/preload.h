@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 
+#define DEPLOY_TAGET 1
 #define MAX_TABLE_SIZE 64
 #define MAX_POOL_SIZE 50000000
 #define MAX_POOL_IOV_SIZE 1000

@@ -11,8 +11,8 @@
 #define ESCA_LOCALIZE 1
 #define MAX_TABLE_ENTRY 64
 #define MAX_TABLE_LEN 1
-#define MAX_USR_WORKER 4
-#define MAX_CPU_NUM 8
+#define MAX_USR_WORKER 1
+#define MAX_CPU_NUM 1
 #define RATIO (MAX_CPU_NUM / MAX_USR_WORKER)
 #define DEFAULT_IDLE_TIME 150 /* in msec */
 

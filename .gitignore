@@ -57,3 +57,4 @@ module/include/systab.h
 user/test
 web/*.html
 downloads/
+local/
