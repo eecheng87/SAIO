@@ -126,11 +126,7 @@ ssize_t shutdown(int fd, int how)
     }
 #endif
     // TODO: imple. hash function for table len. greater than 2 scenario
-#if 0
-    int idx = 0;
-//#else
-    int idx = fd & 1;
-#endif
+
     int idx = this_worker_id * RATIO + (fd % RATIO);
 
     batch_num++;

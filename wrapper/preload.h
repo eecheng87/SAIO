@@ -1,13 +1,9 @@
 #define _GNU_SOURCE
 
-#define DYNAMIC_PRE_ENABLE 0
-
 #define MAX_TABLE_SIZE 64
-#define MAX_THREAD_NUM 10
-#define MAX_POOL_SIZE 20000000
+#define MAX_POOL_SIZE 50000000
 #define MAX_POOL_IOV_SIZE 1000
 #define POOL_UNIT 8
-#define BATCH_THRESHOLD 6
 
 #include "../module/include/esca.h"
 #include "../module/syscall.h"

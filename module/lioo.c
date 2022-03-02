@@ -214,8 +214,13 @@ static int worker(void* arg)
 {
     allow_signal(SIGKILL);
     int cur_cpuid = ((esca_wkr_args_t*)arg)->id;
-    // set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
     unsigned long timeout = 0;
+
+#if ESCA_LOCALIZE
+    set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid / RATIO));
+#else
+    set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
+#endif
 
     init_waitqueue_head(&wq[cur_cpuid]);
 
@@ -307,6 +312,7 @@ static int worker(void* arg)
 
             timeout = jiffies + table[cur_cpuid]->idle_time;
         }
+        cond_resched();
         table[cur_cpuid]->head_table = i;
         table[cur_cpuid]->head_entry = j;
 
