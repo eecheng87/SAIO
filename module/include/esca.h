@@ -8,13 +8,14 @@
 
 #include <stdatomic.h>
 
-#define ESCA_LOCALIZE 1
-#define MAX_TABLE_ENTRY 64
-#define MAX_TABLE_LEN 1
-#define MAX_USR_WORKER 1
-#define MAX_CPU_NUM 1
-#define RATIO (MAX_CPU_NUM / MAX_USR_WORKER)
-#define DEFAULT_IDLE_TIME 150 /* in msec */
+// FIXME: make it more flexible
+#define DEFAULT_CONFIG_PATH "/home/eecheng/Desktop/SAIO/esca.conf"
+#define CONFIG_ARG_MAX_BYTES 128
+
+/* Limit */
+#define CPU_NUM_LIMIT 100
+#define TABLE_LEN_LIMIT 10
+#define TABLE_ENT_LIMIT 64
 
 #define ESCA_WRITE_ONCE(var, val)                           \
     atomic_store_explicit((_Atomic __typeof__(var)*)&(var), \
@@ -39,6 +40,33 @@
 #define esca_likely(cond) __builtin_expect(!!(cond), 1)
 #endif
 
+/* Configuration */
+typedef struct config_option {
+    char key[CONFIG_ARG_MAX_BYTES];
+    int val;
+} config_option_t;
+
+typedef struct esca_config {
+    int esca_localize;
+    int max_table_entry;
+    int max_table_len;
+    int max_usr_worker;
+    int max_ker_worker;
+    int default_idle_time;
+} esca_config_t;
+
+static const esca_config_t default_config
+    = {
+          .esca_localize = 1,
+          .max_table_entry = 64,
+          .max_table_len = 1,
+          .max_usr_worker = 1,
+          .max_ker_worker = 1,
+          .default_idle_time = 150
+      };
+
+esca_config_t* config;
+
 /* define flags */
 #define ESCA_WORKER_NEED_WAKEUP (1U << 1)
 #define ESCA_START_WAKEUP (1U << 2)
@@ -53,8 +81,8 @@ typedef struct esca_table_entry {
 } esca_table_entry_t;
 
 typedef struct esca_table {
-    esca_table_entry_t* tables[MAX_TABLE_LEN]; // shared b/t kernel and user (in kernel address space)
-    esca_table_entry_t* user_tables[MAX_TABLE_LEN]; // shared b/t kernel and user (in usr address space)
+    esca_table_entry_t* tables[TABLE_LEN_LIMIT]; // shared b/t kernel and user (in kernel address space)
+    esca_table_entry_t* user_tables[TABLE_LEN_LIMIT]; // shared b/t kernel and user (in usr address space)
     short head_table; // entry for consumer
     short tail_table; // entry for producer
     short head_entry;
@@ -75,8 +103,8 @@ typedef struct esca_info {
 } esca_info_t;
 
 typedef struct esca_meta {
-    esca_table_t table[MAX_CPU_NUM];
-    esca_info_t info[MAX_CPU_NUM];
+    esca_table_t table[TABLE_LEN_LIMIT];
+    esca_info_t info[TABLE_LEN_LIMIT];
 } esca_meta_t;
 #endif
 

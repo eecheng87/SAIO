@@ -7,6 +7,7 @@
 #define __NR_esca_register 400
 #define __NR_esca_wakeup 401
 #define __NR_esca_wait 402
+#define __NR_esca_config 403
 
 /* batch table entry info */
 #define BENTRY_EMPTY 0
@@ -30,6 +31,12 @@ static inline long
 lioo_wait()
 {
     syscall(__NR_esca_wait);
+}
+
+static inline long
+lioo_init_conf(esca_config_t* conf)
+{
+    syscall(__NR_esca_config, conf);
 }
 
 #define scall0(N, FL, Z, P) ((syscall_t) { __NR_##N, FL, Z, P, 0 })

@@ -17,13 +17,22 @@ void* mpool; /* memory pool */
 ull pool_offset;
 struct iovec* iovpool; /* pool for iovector */
 ull iov_offset;
-off_t off_arr[MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1];
+off_t off_arr[TABLE_ENT_LIMIT * TABLE_LEN_LIMIT + 1];
+
+/* Global configurable variable */
+int ESCA_LOCALIZE;
+int MAX_TABLE_ENTRY;
+int MAX_TABLE_LEN;
+int MAX_USR_WORKER;
+int MAX_CPU_NUM;
+int RATIO;
+int DEFAULT_IDLE_TIME;
 
 /* declare shared table, pin user space addr. to kernel phy. addr by kmap */
 int this_worker_id;
 
 /* user worker can't touch worker's table in diff. set */
-esca_table_t* table[MAX_CPU_NUM];
+esca_table_t* table[CPU_NUM_LIMIT];
 
 void init_worker(int idx)
 {
@@ -128,8 +137,31 @@ void update_index(int idx)
 #include "lighty.c"
 #endif
 
+void init_config(esca_config_t* c)
+{
+    ESCA_LOCALIZE = c->esca_localize;
+    MAX_TABLE_ENTRY = c->max_table_entry;
+    MAX_TABLE_LEN = c->max_table_len;
+    MAX_USR_WORKER = c->max_usr_worker;
+    MAX_CPU_NUM = c->max_ker_worker;
+    RATIO = (MAX_CPU_NUM / MAX_USR_WORKER);
+    DEFAULT_IDLE_TIME = c->default_idle_time;
+
+    printf("\033[0;33m");
+    printf(" Localize: \033[0;37m%s\033[0;33m\n", ESCA_LOCALIZE ? "Enable" : "Disable");
+    printf(" MAX_TABLE_ENTRY: \033[0;37m%d\033[0;33m\n", MAX_TABLE_ENTRY);
+    printf(" MAX_TABLE_LEN: \033[0;37m%d\033[0;33m\n", MAX_TABLE_LEN);
+    printf(" MAX_USR_WORKER: \033[0;37m%d\033[0;33m\n", MAX_USR_WORKER);
+    printf(" MAX_KER_WORKER: \033[0;37m%d\033[0;33m\n", MAX_CPU_NUM);
+
+    if (ESCA_LOCALIZE)
+        printf(" # of K-worker per CPU: \033[0;37m%d\n", RATIO);
+    printf("\033[0m");
+}
+
 __attribute__((constructor)) static void setup(void)
 {
+    FILE* fp;
     main_pid = getpid();
     pgsize = getpagesize();
 
@@ -141,4 +173,41 @@ __attribute__((constructor)) static void setup(void)
     real_writev = real_writev ? real_writev : dlsym(RTLD_NEXT, "writev");
     real_shutdown = real_shutdown ? real_shutdown : dlsym(RTLD_NEXT, "shutdown");
     real_sendfile = real_sendfile ? real_sendfile : dlsym(RTLD_NEXT, "sendfile");
+
+    /* configuration */
+    config = malloc(sizeof(esca_config_t));
+
+    fp = fopen(DEFAULT_CONFIG_PATH, "r+");
+    if (!fp) {
+        printf("\033[0;31mCould not open configuration file: %s\n\033[0mUsing default configuration ...\n", DEFAULT_CONFIG_PATH);
+        config = &default_config;
+    } else {
+        while (1) {
+            config_option_t option;
+            if (fscanf(fp, "%s = %d", option.key, &option.val) != 2) {
+                if (feof(fp)) {
+                    break;
+                }
+                printf("Invalid format in config file\n");
+                continue;
+            }
+            if (strcmp(option.key, "esca_localize") == 0) {
+                config->esca_localize = option.val;
+            } else if (strcmp(option.key, "max_table_entry") == 0) {
+                config->max_table_entry = option.val;
+            } else if (strcmp(option.key, "max_table_len") == 0) {
+                config->max_table_len = option.val;
+            } else if (strcmp(option.key, "max_usr_worker") == 0) {
+                config->max_usr_worker = option.val;
+            } else if (strcmp(option.key, "max_ker_worker") == 0) {
+                config->max_ker_worker = option.val;
+            } else if (strcmp(option.key, "default_idle_time") == 0) {
+                config->default_idle_time = option.val;
+            } else {
+                printf("Invalid option: %s\n", option.key);
+            }
+        }
+    }
+    init_config(config);
+    syscall(__NR_esca_config, config);
 }

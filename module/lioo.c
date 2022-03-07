@@ -37,27 +37,37 @@ MODULE_AUTHOR("Steven Cheng");
 MODULE_DESCRIPTION("Linux IO offloading");
 MODULE_VERSION("0.1");
 
+/* Global configurable variable */
+int ESCA_LOCALIZE;
+int MAX_TABLE_ENTRY;
+int MAX_TABLE_LEN;
+int MAX_USR_WORKER;
+int MAX_CPU_NUM;
+int RATIO;
+int DEFAULT_IDLE_TIME;
+
 /* restore original syscall for recover */
 void* syscall_register_ori;
 void* syscall_exit_ori;
 void* syscall_wait_ori;
+void* syscall_init_conf_ori;
 
 typedef asmlinkage long (*sys_call_ptr_t)(long);
 
 int main_pid; /* PID of main thread */
 
 /* declare shared table */
-struct page* table_pinned_pages[MAX_CPU_NUM][MAX_TABLE_LEN];
+struct page* table_pinned_pages[CPU_NUM_LIMIT][TABLE_LEN_LIMIT];
 struct page* shared_info_pinned_pages[1];
-esca_table_t* table[MAX_CPU_NUM];
+esca_table_t* table[CPU_NUM_LIMIT];
 //esca_table_t* local_table[MAX_CPU_NUM];
-short submitted[MAX_CPU_NUM];
+short submitted[CPU_NUM_LIMIT];
 
 static int worker(void* arg);
 
 // TODO: encapsulate them
-wait_queue_head_t worker_wait[MAX_CPU_NUM];
-wait_queue_head_t wq[MAX_CPU_NUM];
+wait_queue_head_t worker_wait[CPU_NUM_LIMIT];
+wait_queue_head_t wq[CPU_NUM_LIMIT];
 // int flags[MAX_CPU_NUM]; // need_wake_up; this might be shared with user space (be aware of memory barrier)
 
 typedef asmlinkage long (*F0_t)(void);
@@ -68,7 +78,7 @@ typedef asmlinkage long (*F4_t)(long, long, long, long);
 typedef asmlinkage long (*F5_t)(long, long, long, long, long);
 typedef asmlinkage long (*F6_t)(long, long, long, long, long, long);
 
-static struct task_struct* worker_task[MAX_CPU_NUM];
+static struct task_struct* worker_task[CPU_NUM_LIMIT];
 
 // void (*wake_up_new_task_ptr)(struct task_struct *) = 0;
 
@@ -216,11 +226,10 @@ static int worker(void* arg)
     int cur_cpuid = ((esca_wkr_args_t*)arg)->id;
     unsigned long timeout = 0;
 
-#if ESCA_LOCALIZE
-    set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid / RATIO));
-#else
-    set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
-#endif
+    if (ESCA_LOCALIZE)
+        set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid / RATIO));
+    else
+        set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
 
     init_waitqueue_head(&wq[cur_cpuid]);
 
@@ -428,6 +437,39 @@ asmlinkage void sys_esca_wait(const struct __user pt_regs* regs)
     wait_event_interruptible(wq[idx], 1);
 }
 
+asmlinkage void sys_esca_init_config(const struct __user pt_regs* regs)
+{
+#if defined(__x86_64__)
+    void* ptr = regs->di;
+#elif defined(__aarch64__)
+    void* ptr = regs->regs[0];
+#endif
+    esca_config_t* kconfig = kmalloc(sizeof(esca_config_t), GFP_KERNEL);
+
+    if (!kconfig) {
+        printk("[ERROR] Fail at configuring\n");
+    }
+
+    copy_from_user(kconfig, ptr, sizeof(esca_config_t));
+
+    ESCA_LOCALIZE = kconfig->esca_localize;
+    MAX_TABLE_ENTRY = kconfig->max_table_entry;
+    MAX_TABLE_LEN = kconfig->max_table_len;
+    MAX_USR_WORKER = kconfig->max_usr_worker;
+    MAX_CPU_NUM = kconfig->max_ker_worker;
+    RATIO = (MAX_CPU_NUM / MAX_USR_WORKER);
+    DEFAULT_IDLE_TIME = kconfig->default_idle_time;
+
+    printk("Localize: %s\n", ESCA_LOCALIZE ? "Enable" : "Disable");
+    printk("MAX_TABLE_ENTRY: %d\n", MAX_TABLE_ENTRY);
+    printk("MAX_TABLE_LEN: %d\n", MAX_TABLE_LEN);
+    printk("MAX_USR_WORKER: %d\n", MAX_USR_WORKER);
+    printk("MAX_KER_WORKER: %d\n", MAX_CPU_NUM);
+
+    if (ESCA_LOCALIZE)
+        printk("# of K-worker per CPU: %d\n", RATIO);
+}
+
 static int __init lioo_init(void)
 {
 
@@ -444,11 +486,13 @@ static int __init lioo_init(void)
     syscall_register_ori = (void*)syscall_table_ptr[__NR_esca_register];
     syscall_exit_ori = (void*)syscall_table_ptr[__NR_esca_wakeup];
     syscall_wait_ori = (void*)syscall_table_ptr[__NR_esca_wait];
+    syscall_init_conf_ori = (void*)syscall_table_ptr[__NR_esca_config];
 
     /* hooking */
     syscall_table_ptr[__NR_esca_register] = (void*)sys_esca_register;
     syscall_table_ptr[__NR_esca_wakeup] = (void*)sys_esca_wakeup;
     syscall_table_ptr[__NR_esca_wait] = (void*)sys_esca_wait;
+    syscall_table_ptr[__NR_esca_config] = (void*)sys_esca_init_config;
 
     /* dis-allow write */
     disallow_writes();
@@ -463,6 +507,7 @@ static void __exit lioo_exit(void)
     syscall_table_ptr[__NR_esca_register] = (void*)syscall_register_ori;
     syscall_table_ptr[__NR_esca_wakeup] = (void*)syscall_exit_ori;
     syscall_table_ptr[__NR_esca_wait] = (void*)syscall_wait_ori;
+    syscall_table_ptr[__NR_esca_config] = (void*)syscall_init_conf_ori;
     disallow_writes();
 
 #if defined(__aarch64__)
