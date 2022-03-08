@@ -50,7 +50,7 @@ $(NGX):
 	mkdir -p local
 	cd $(NGX_PATH) && ./configure --prefix=$(PWD)/local
 	scripts/ngx.sh $(NGX_PATH)
-	cd $(OUT) && patch -p1 < ../patches/ngx_process.patch && patch -p1 < ../patches/ngx_process_cycle.patch
+	cd $(OUT) && patch -p1 < ../patches/ngx_process.patch && patch -p1 < ../patches/ngx_epoll_module.patch
 	cd $(NGX_PATH) && make -j$(nproc) && make install
 	cp -f configs/nginx.conf local/conf/nginx.conf
 

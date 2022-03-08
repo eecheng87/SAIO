@@ -60,7 +60,7 @@ int main_pid; /* PID of main thread */
 struct page* table_pinned_pages[CPU_NUM_LIMIT][TABLE_LEN_LIMIT];
 struct page* shared_info_pinned_pages[1];
 esca_table_t* table[CPU_NUM_LIMIT];
-//esca_table_t* local_table[MAX_CPU_NUM];
+
 short submitted[CPU_NUM_LIMIT];
 
 static int worker(void* arg);
@@ -232,7 +232,6 @@ static int worker(void* arg)
         set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
 
     init_waitqueue_head(&wq[cur_cpuid]);
-
     DEFINE_WAIT(wait);
 
     printk("im in worker, pid = %d, bound at cpu %d, cur_cpupid = %d\n",
@@ -393,7 +392,7 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
 
     // TODO: merge them
     submitted[id] = 0;
-    table[id]->flags = 0;
+    table[id]->flags = 0 | ESCA_WORKER_NEED_WAKEUP;
     table[id]->idle_time = msecs_to_jiffies(DEFAULT_IDLE_TIME);
     init_waitqueue_head(&worker_wait[id]);
 
