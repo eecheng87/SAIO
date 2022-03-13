@@ -66,6 +66,15 @@ test-lighttpd-perf:
 test-esca-lighttpd-perf:
 	LD_PRELOAD=wrapper/preload.so ./$(LIGHTY_PATH)/src/lighttpd -D -f $(LIGHTY_PATH)/src/lighttpd.conf #& \
 
+ifeq ($(strip $(TARGET)),ngx)
+TARGET = ngx
+else ifeq ($(strip $(TARGET)),lighty)
+TARGET = lighty
+endif
+
+config:
+	ln -s $(shell pwd)/wrapper/$(TARGET).c wrapper/target-preload.c
+
 kill-lighttpd:
 	kill -9 $(shell ps -ef | awk '$$8 ~ /lighttpd/ {print $$2}')
 

@@ -17,7 +17,6 @@ void* mpool; /* memory pool */
 ull pool_offset;
 struct iovec* iovpool; /* pool for iovector */
 ull iov_offset;
-off_t off_arr[TABLE_ENT_LIMIT * TABLE_LEN_LIMIT + 1];
 
 /* Global configurable variable */
 int ESCA_LOCALIZE;
@@ -75,9 +74,6 @@ void init_worker(int idx)
         }
     }
 
-    for (int i = 0; i < MAX_TABLE_ENTRY * MAX_TABLE_LEN + 1; i++)
-        off_arr[i] = 0;
-
     mpool = (void*)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
     pool_offset = 0;
     iovpool = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
@@ -131,11 +127,7 @@ void update_index(int idx)
     }
 }
 
-#if DEPLOY_TAGET
-#include "ngx.c"
-#else
-#include "lighty.c"
-#endif
+#include "target-preload.c"
 
 void init_config(esca_config_t* c)
 {

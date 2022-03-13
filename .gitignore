@@ -58,3 +58,4 @@ user/test
 web/*.html
 downloads/
 local/
+wrapper/target-preload.c
