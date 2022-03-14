@@ -1,0 +1,11 @@
+--- old/redis-7.0-rc2/src/server.c	2022-02-28 21:35:46.000000000 +0800
++++ new/redis-7.0-rc2/src/server.c	2022-03-14 20:18:31.540987391 +0800
+@@ -6983,7 +6983,7 @@
+
+     redisSetCpuAffinity(server.server_cpulist);
+     setOOMScoreAdj(-1);
+-
++    init_worker(0);
+     aeMain(server.el);
+     aeDeleteEventLoop(server.el);
+     return 0;

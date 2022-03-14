@@ -12,6 +12,12 @@ NGX_NAME := nginx-1.20.0
 NGX_PATH := downloads/$(NGX_NAME)
 NGX := nginx
 
+REDIS_SOURCE := https://github.com/redis/redis/archive/refs/tags/7.0-rc2.tar.gz
+REDIS_NAME := redis-7.0-rc2
+REDIS_ZIP_NAME := 7.0-rc2
+REDIS_PATH := downloads/$(REDIS_NAME)
+REDIS := redis
+
 LIBDUMMY_PATH := $(shell find $(shell pwd) -type f -name "libdummy.so") | sed 's_/_\\/_g'
 PWD := $(shell pwd)
 OUT := downloads
@@ -54,6 +60,16 @@ $(NGX):
 	cd $(NGX_PATH) && make -j$(nproc) && make install
 	cp -f configs/nginx.conf local/conf/nginx.conf
 
+$(REDIS):
+	@echo "download redis..."
+	wget $(REDIS_SOURCE)
+	mkdir -p $(REDIS_PATH)
+	tar -zxvf $(REDIS_ZIP_NAME).tar.gz -C $(OUT)
+	rm $(REDIS_ZIP_NAME).tar.gz
+	scripts/redis.sh $(REDIS_PATH)
+	cd $(OUT) && patch -p1 < ../patches/redis_network.patch && patch -p1 < ../patches/redis_network.patch
+	cd $(REDIS_PATH) && make -j$(nproc)
+
 test-nginx-perf:
 	./$(NGX_PATH)/objs/nginx
 
@@ -66,10 +82,19 @@ test-lighttpd-perf:
 test-esca-lighttpd-perf:
 	LD_PRELOAD=wrapper/preload.so ./$(LIGHTY_PATH)/src/lighttpd -D -f $(LIGHTY_PATH)/src/lighttpd.conf #& \
 
+test-redis-perf:
+	./$(REDIS_PATH)/src/redis-server
+
+test-esca-redis-perf:
+	LD_PRELOAD=wrapper/preload.so ./$(REDIS_PATH)/src/redis-server
+
+
 ifeq ($(strip $(TARGET)),ngx)
 TARGET = ngx
 else ifeq ($(strip $(TARGET)),lighty)
 TARGET = lighty
+else ifeq ($(strip $(TARGET)),redis)
+TARGET = redis
 endif
 
 config:
