@@ -67,7 +67,7 @@ $(REDIS):
 	tar -zxvf $(REDIS_ZIP_NAME).tar.gz -C $(OUT)
 	rm $(REDIS_ZIP_NAME).tar.gz
 	scripts/redis.sh $(REDIS_PATH)
-	cd $(OUT) && patch -p1 < ../patches/redis_network.patch && patch -p1 < ../patches/redis_network.patch
+	cd $(OUT) && patch -p1 < ../patches/redis_network.patch && patch -p1 < ../patches/redis_server.patch
 	cd $(REDIS_PATH) && make -j$(nproc)
 
 test-nginx-perf:
@@ -87,6 +87,9 @@ test-redis-perf:
 
 test-esca-redis-perf:
 	LD_PRELOAD=wrapper/preload.so ./$(REDIS_PATH)/src/redis-server
+
+default-redis-benchmark:
+	./$(REDIS_PATH)/src/redis-benchmark -t set,get -n 100000 -q -c 100 -P 16
 
 
 ifeq ($(strip $(TARGET)),ngx)
