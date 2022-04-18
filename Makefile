@@ -35,6 +35,7 @@ reload:
 format:
 	find module/ -iname *.h -o -iname *.c -type f | xargs clang-format -i -style=WebKit
 	find wrapper/ -iname *.h -o -iname *.c -type f | xargs clang-format -i -style=WebKit
+	find echo/ -iname *.h -o -iname *.c -type f | xargs clang-format -i -style=WebKit
 
 $(LIGHTY):
 	@echo "download lighttpd..."
@@ -98,6 +99,8 @@ else ifeq ($(strip $(TARGET)),lighty)
 TARGET = lighty
 else ifeq ($(strip $(TARGET)),redis)
 TARGET = redis
+else ifeq ($(strip $(TARGET)),echo)
+TARGET = echo
 endif
 
 config:
