@@ -14,7 +14,7 @@
 
 #define MAX_CONNECTIONS 4096
 #define BACKLOG 512
-#define MAX_MESSAGE_LEN 2048
+#define MAX_MESSAGE_LEN 91280
 #define BUFFERS_COUNT MAX_CONNECTIONS
 
 void add_accept(struct io_uring* ring, int fd, struct sockaddr* client_addr, socklen_t* client_len, unsigned flags);

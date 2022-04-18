@@ -12,7 +12,7 @@
 
 #define BACKLOG 512
 #define MAX_EVENTS 1024
-#define MAX_MESSAGE_LEN 2048
+#define MAX_MESSAGE_LEN 91280
 
 void error(char* msg);
 
