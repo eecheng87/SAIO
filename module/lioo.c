@@ -265,6 +265,7 @@ static int worker(void* arg)
                 // clear need_wakeup
                 // FIXME: // need write barrier?
                 WRITE_ONCE(table[cur_cpuid]->flags, table[cur_cpuid]->flags & ~ESCA_WORKER_NEED_WAKEUP);
+                timeout = jiffies + table[cur_cpuid]->idle_time;
                 continue;
             }
 
