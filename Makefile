@@ -11,6 +11,8 @@ NGX_SOURCE := http://nginx.org/download/nginx-1.21.4.tar.gz
 NGX_NAME := nginx-1.21.4
 NGX_PATH := downloads/$(NGX_NAME)
 NGX := nginx
+# NGX_CONFIG := "set basic configuration"
+NGX_CONFIG_TLS := --with-http_ssl_module
 
 REDIS_SOURCE := https://github.com/redis/redis/archive/refs/tags/7.0-rc2.tar.gz
 REDIS_NAME := redis-7.0-rc2
@@ -55,8 +57,9 @@ $(NGX):
 	tar -zxvf $(NGX_NAME).tar.gz -C $(OUT)
 	rm $(NGX_NAME).tar.gz
 	mkdir -p local
-	cd $(NGX_PATH) && ./configure --prefix=$(PWD)/local
-	scripts/ngx.sh $(NGX_PATH)
+	cd $(NGX_PATH) && ./configure --prefix=$(PWD)/local $(NGX_CONFIG)
+	scripts/crt.sh
+	scripts/ngx.sh $(NGX_PATH) $(CONFIG)
 	cd $(OUT) && patch -p1 < ../patches/ngx_process.patch && patch -p1 < ../patches/ngx_epoll_module.patch
 	cd $(NGX_PATH) && make -j$(nproc) && make install
 	cp -f configs/nginx.conf local/conf/nginx.conf
@@ -92,7 +95,7 @@ test-esca-redis-perf:
 default-redis-benchmark:
 	./$(REDIS_PATH)/src/redis-benchmark -t set,get -n 100000 -q -c 100 -P 16
 
-
+# set deployed target
 ifeq ($(strip $(TARGET)),ngx)
 TARGET = ngx
 else ifeq ($(strip $(TARGET)),lighty)
@@ -103,8 +106,18 @@ else ifeq ($(strip $(TARGET)),echo)
 TARGET = echo
 endif
 
+# set configuration flag of Nginx
+ifeq ($(strip $(CONFIG)),tls)
+NGX_CONFIG += $(NGX_CONFIG_TLS)
+else
+endif
+export NGX_CONFIG
+
 config:
 	ln -s $(shell pwd)/wrapper/$(TARGET).c wrapper/target-preload.c
+	@if [ $(CONFIG) = "tls" ]; then \
+        cat wrapper/ngx_tls.c >> wrapper/target-preload.c; \
+    fi
 
 kill-lighttpd:
 	kill -9 $(shell ps -ef | awk '$$8 ~ /lighttpd/ {print $$2}')
@@ -112,5 +125,9 @@ kill-lighttpd:
 clean-out:
 	rm -rf $(OUT)
 	rm -rf local
+	rm -rf auth
+
+recover:
+	git checkout HEAD -- configs/nginx.conf wrapper/ngx.c
 
 .PHONY: $(TOPTARGETS) $(SUBDIRS) $(NGX) $(LIGHTY)
