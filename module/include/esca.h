@@ -8,7 +8,7 @@
 
 #include <stdatomic.h>
 
-#define DEFAULT_CONFIG_PATH "/home/eecheng/Desktop/SAIO/esca.conf"
+#define DEFAULT_CONFIG_PATH ""
 #define CONFIG_ARG_MAX_BYTES 128
 
 /* Limit */
