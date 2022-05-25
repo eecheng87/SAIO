@@ -7,8 +7,8 @@ LIGHTY_NAME := lighttpd1.4-lighttpd-1.4.56
 LIGHTY_PATH := downloads/$(LIGHTY_NAME)
 LIGHTY := lighttpd
 
-NGX_SOURCE := http://nginx.org/download/nginx-1.20.0.tar.gz
-NGX_NAME := nginx-1.20.0
+NGX_SOURCE := http://nginx.org/download/nginx-1.21.4.tar.gz
+NGX_NAME := nginx-1.21.4
 NGX_PATH := downloads/$(NGX_NAME)
 NGX := nginx
 
