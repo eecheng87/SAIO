@@ -8,7 +8,6 @@
 
 #include <stdatomic.h>
 
-// FIXME: make it more flexible
 #define DEFAULT_CONFIG_PATH "/home/eecheng/Desktop/SAIO/esca.conf"
 #define CONFIG_ARG_MAX_BYTES 128
 

@@ -114,10 +114,11 @@ endif
 export NGX_CONFIG
 
 config:
+	sed -i "s#DEFAULT_CONFIG_PATH \".*\"#DEFAULT_CONFIG_PATH \"$(PWD)/esca\.conf\"#" module/include/esca.h
 	ln -s $(shell pwd)/wrapper/$(TARGET).c wrapper/target-preload.c
 	@if [ $(CONFIG) = "tls" ]; then \
-        cat wrapper/ngx_tls.c >> wrapper/target-preload.c; \
-    fi
+		cat wrapper/ngx_tls.c >> wrapper/target-preload.c; \
+	fi
 
 kill-lighttpd:
 	kill -9 $(shell ps -ef | awk '$$8 ~ /lighttpd/ {print $$2}')
@@ -128,6 +129,6 @@ clean-out:
 	rm -rf auth
 
 recover:
-	git checkout HEAD -- configs/nginx.conf wrapper/ngx.c
+	git checkout HEAD -- configs/nginx.conf wrapper/ngx.c module/include/esca.h
 
 .PHONY: $(TOPTARGETS) $(SUBDIRS) $(NGX) $(LIGHTY)
