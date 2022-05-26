@@ -1,4 +1,4 @@
-/* Instead of sendifle64, kTLS use sendfile as system call wrapper */
+/* Instead of sendfile64, kTLS use sendfile as system call wrapper */
 ssize_t sendfile(int out_fd, int in_fd, off_t* offset, size_t count)
 {
     if (!in_segment) {
