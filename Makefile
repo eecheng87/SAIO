@@ -13,6 +13,17 @@ NGX_PATH := downloads/$(NGX_NAME)
 NGX := nginx
 # NGX_CONFIG := "set basic configuration"
 NGX_CONFIG_TLS := --with-http_ssl_module
+NGX_CONFIG_kTLS := --with-http_auth_request_module \
+					--with-http_secure_link_module \
+					--with-http_slice_module \
+					--with-http_ssl_module \
+					--with-openssl=../openssl-3.0.0 \
+					--with-openssl-opt=enable-ktls
+
+OPENSSL_SOURCE := https://www.openssl.org/source/openssl-3.0.0.tar.gz
+OPENSSL_NAME := openssl-3.0.0
+OPENSSL_PATH := downloads/$(OPENSSL_NAME)
+OPENSSL := openssl
 
 REDIS_SOURCE := https://github.com/redis/redis/archive/refs/tags/7.0-rc2.tar.gz
 REDIS_NAME := redis-7.0-rc2
@@ -56,6 +67,10 @@ $(NGX):
 	mkdir -p $(NGX_PATH)
 	tar -zxvf $(NGX_NAME).tar.gz -C $(OUT)
 	rm $(NGX_NAME).tar.gz
+	wget $(OPENSSL_SOURCE) --no-check-certificate
+	mkdir -p $(OPENSSL_PATH)
+	tar -zxvf $(OPENSSL_NAME).tar.gz -C $(OUT)
+	rm $(OPENSSL_NAME).tar.gz
 	mkdir -p local
 	cd $(NGX_PATH) && ./configure --prefix=$(PWD)/local $(NGX_CONFIG)
 	scripts/crt.sh
@@ -109,6 +124,8 @@ endif
 # set configuration flag of Nginx
 ifeq ($(strip $(CONFIG)),tls)
 NGX_CONFIG += $(NGX_CONFIG_TLS)
+else ifeq ($(strip $(CONFIG)),ktls)
+NGX_CONFIG += $(NGX_CONFIG_kTLS)
 else
 endif
 export NGX_CONFIG
@@ -116,11 +133,13 @@ export NGX_CONFIG
 config:
 	sed -i "s#DEFAULT_CONFIG_PATH \".*\"#DEFAULT_CONFIG_PATH \"$(PWD)/esca\.conf\"#" module/include/esca.h
 	ln -s $(shell pwd)/wrapper/$(TARGET).c wrapper/target-preload.c
-ifdef $(CONFIG)
+#ifdef $(CONFIG)
 	@if [ $(CONFIG) = "tls" ]; then \
 		cat wrapper/ngx_tls.c >> wrapper/target-preload.c; \
+	elif [ $(CONFIG) = "ktls" ]; then \
+		cat wrapper/ngx_ktls.c >> wrapper/target-preload.c; \
 	fi
-endif
+#endif
 
 kill-lighttpd:
 	kill -9 $(shell ps -ef | awk '$$8 ~ /lighttpd/ {print $$2}')

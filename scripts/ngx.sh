@@ -19,3 +19,14 @@ if [ $2 = "tls" ]; then
     sed -i "23i listen [::]:443 ssl;" configs/nginx.conf
     sed -i "23i listen 443 ssl;" configs/nginx.conf
 fi
+
+if [ $2 = "ktls" ]; then
+    # enable kTLS
+    sed -i "s/listen       8081;/# listen       8081;/" configs/nginx.conf
+    sed -i "23i ssl_protocols TLSv1.2;" configs/nginx.conf
+    sed -i "23i ssl_conf_command Options KTLS;" configs/nginx.conf
+    sed -i "23i ssl_certificate_key ${authpath}/RSA/saio-root.key;" configs/nginx.conf
+    sed -i "23i ssl_certificate ${authpath}/RSA/saio-root.crt;" configs/nginx.conf
+    sed -i "23i listen [::]:443 ssl;" configs/nginx.conf
+    sed -i "23i listen 443 ssl;" configs/nginx.conf
+fi
