@@ -133,13 +133,15 @@ export NGX_CONFIG
 config:
 	sed -i "s#DEFAULT_CONFIG_PATH \".*\"#DEFAULT_CONFIG_PATH \"$(PWD)/esca\.conf\"#" module/include/esca.h
 	ln -s $(shell pwd)/wrapper/$(TARGET).c wrapper/target-preload.c
-#ifdef $(CONFIG)
+ifneq ($(CONFIG),)
 	@if [ $(CONFIG) = "tls" ]; then \
+		echo ">> TLS is used"; \
 		cat wrapper/ngx_tls.c >> wrapper/target-preload.c; \
 	elif [ $(CONFIG) = "ktls" ]; then \
+		echo ">> kTLS is used"; \
 		cat wrapper/ngx_ktls.c >> wrapper/target-preload.c; \
 	fi
-#endif
+endif
 
 kill-lighttpd:
 	kill -9 $(shell ps -ef | awk '$$8 ~ /lighttpd/ {print $$2}')
