@@ -111,6 +111,11 @@ long batch_flush()
     return 0;
 }
 
+void toggle_region()
+{
+    in_segment ^= 1;
+}
+
 void update_index(int idx)
 {
     // avoid overwriting;

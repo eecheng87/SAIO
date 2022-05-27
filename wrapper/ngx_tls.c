@@ -1,7 +1,7 @@
 ssize_t write(int fd, const void* buf, size_t count)
 {
     if (!in_segment) {
-	return real_write(fd, buf, count);
+        return real_write(fd, buf, count);
     }
 
     int idx = this_worker_id * RATIO + (fd % RATIO);
