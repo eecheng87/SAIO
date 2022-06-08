@@ -3,7 +3,12 @@
 #define DEPLOY_TAGET 1
 #define MAX_TABLE_SIZE 64
 #define MAX_POOL_SIZE 900000000
-#define MAX_POOL_IOV_SIZE 1000
+
+/* optimize: order two */
+#define MAX_POOL_IOV_SIZE 1024
+#define MAX_POOL_MSG_SIZE 1024
+#define IOV_MASK (MAX_POOL_IOV_SIZE - 1)
+#define MSG_MASK (MAX_POOL_MSG_SIZE - 1)
 #define POOL_UNIT 8
 
 #include "../module/include/esca.h"
@@ -15,7 +20,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <sys/uio.h>
 #include <time.h>
 
@@ -35,3 +42,5 @@ typedef long (*shutdown_t)(int fd, int how);
 shutdown_t real_shutdown;
 typedef long (*sendfile_t)(int out_fd, int in_fd, off_t* offset, size_t count);
 sendfile_t real_sendfile;
+typedef long (*sendmsg_t)(int sockfd, const struct msghdr* msg, int flags);
+sendmsg_t real_sendmsg;

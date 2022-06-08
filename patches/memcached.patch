@@ -1,0 +1,20 @@
+--- old/memcached-1.6.15/thread.c	2022-06-09 01:59:43.605398261 +0000
++++ new/memcached-1.6.15/thread.c	2022-06-09 02:01:16.581275340 +0000
+@@ -497,6 +497,8 @@
+ /*
+  * Worker thread: main event loop
+  */
++extern void init_worker(int);
++int worker_index = 0;
+ static void *worker_libevent(void *arg) {
+     LIBEVENT_THREAD *me = arg;
+
+@@ -514,7 +516,7 @@
+     }
+
+     register_thread_initialized();
+-
++    init_worker(worker_index++);
+     event_base_loop(me->base, 0);
+
+     // same mechanism used to watch for all threads exiting.

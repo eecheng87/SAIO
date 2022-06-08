@@ -31,6 +31,18 @@ REDIS_ZIP_NAME := 7.0-rc2
 REDIS_PATH := downloads/$(REDIS_NAME)
 REDIS := redis
 
+MEMCACHED_SOURCE := http://www.memcached.org/files/memcached-1.6.15.tar.gz
+MEMCACHED_NAME := memcached-1.6.15
+MEMCACHED_ZIP_NAME := memcached-1.6.15
+MEMCACHED_PATH := downloads/$(MEMCACHED_NAME)
+MEMCACHED := memcached
+
+LIBEVENT_SOURCE := https://github.com/libevent/libevent/archive/refs/tags/release-2.1.12-stable.tar.gz
+LIBEVENT_NAME := libevent-release-2.1.12-stable
+LIBEVENT_ZIP_NAME := release-2.1.12-stable
+LIBEVENT_PATH := downloads/$(LIBEVENT_NAME)
+LIBEVENT := libevent
+
 LIBDUMMY_PATH := $(shell find $(shell pwd) -type f -name "libdummy.so") | sed 's_/_\\/_g'
 PWD := $(shell pwd)
 OUT := downloads
@@ -89,6 +101,29 @@ $(REDIS):
 	cd $(OUT) && patch -p1 < ../patches/redis_network.patch && patch -p1 < ../patches/redis_server.patch
 	cd $(REDIS_PATH) && make -j$(nproc)
 
+$(LIBEVENT):
+	@echo "download libevent..."
+	wget $(LIBEVENT_SOURCE) --no-check-certificate
+	mkdir -p $(LIBEVENT_PATH)
+	tar -zxvf $(LIBEVENT_ZIP_NAME).tar.gz -C $(OUT)
+	rm $(LIBEVENT_ZIP_NAME).tar.gz
+	cd $(LIBEVENT_PATH) && mkdir -p local && ./autogen.sh && ./configure --prefix=$(PWD)/$(LIBEVENT_PATH)/local
+	cd $(OUT) && patch -p1 < ../patches/libevent.patch
+
+
+$(MEMCACHED): $(LIBEVENT)
+	@echo "download memcached..."
+	wget $(MEMCACHED_SOURCE)
+	mkdir -p $(MEMCACHED_PATH)
+	tar -zxvf $(MEMCACHED_ZIP_NAME).tar.gz -C $(OUT)
+	rm $(MEMCACHED_ZIP_NAME).tar.gz
+	cd $(MEMCACHED_PATH) && mkdir -p local && ./configure --prefix=$(PWD)/$(MEMCACHED_PATH)/local
+	cd $(OUT) && patch -p1 < ../patches/memcached.patch
+	scripts/libevent.sh $(LIBEVENT_PATH)
+	cd $(LIBEVENT_PATH) && make -j$(nproc) && sudo make install
+	scripts/memcached.sh $(MEMCACHED_PATH)
+	cd $(MEMCACHED_PATH) && make -j$(nproc)
+
 test-nginx-perf:
 	./$(NGX_PATH)/objs/nginx
 
@@ -119,6 +154,8 @@ else ifeq ($(strip $(TARGET)),redis)
 TARGET = redis
 else ifeq ($(strip $(TARGET)),echo)
 TARGET = echo
+else ifeq ($(strip $(TARGET)),mcached)
+TARGET = mcached
 endif
 
 # set configuration flag of Nginx

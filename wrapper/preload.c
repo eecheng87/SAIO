@@ -14,9 +14,11 @@ int syscall_num; /* number of syscall triggered currently */
 size_t pgsize;
 
 void* mpool; /* memory pool */
-ull pool_offset;
 struct iovec* iovpool; /* pool for iovector */
+struct msghdr* msgpool; /* pool for msgpool */
+ull pool_offset;
 ull iov_offset;
+ull msg_offset;
 
 /* Global configurable variable */
 int ESCA_LOCALIZE;
@@ -78,6 +80,8 @@ void init_worker(int idx)
     pool_offset = 0;
     iovpool = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
     iov_offset = 0;
+    msgpool = (struct msghdr*)malloc(sizeof(struct msghdr) * MAX_POOL_MSG_SIZE);
+    msg_offset = 0;
 
 init_worker_exit:
     return;
@@ -170,6 +174,7 @@ __attribute__((constructor)) static void setup(void)
     real_writev = real_writev ? real_writev : dlsym(RTLD_NEXT, "writev");
     real_shutdown = real_shutdown ? real_shutdown : dlsym(RTLD_NEXT, "shutdown");
     real_sendfile = real_sendfile ? real_sendfile : dlsym(RTLD_NEXT, "sendfile");
+    real_sendmsg = real_sendmsg ? real_sendmsg : dlsym(RTLD_NEXT, "sendmsg");
 
     /* configuration */
     config = malloc(sizeof(esca_config_t));

@@ -1,0 +1,19 @@
+--- old/libevent-release-2.1.12-stable/event.c	2022-06-09 01:52:06.746406656 +0000
++++ new/libevent-release-2.1.12-stable/event.c	2022-06-09 01:51:04.594620903 +0000
+@@ -1639,7 +1639,7 @@
+ 	int count = 0;
+
+ 	EVUTIL_ASSERT(activeq != NULL);
+-
++batch_start();
+ 	for (evcb = TAILQ_FIRST(activeq); evcb; evcb = TAILQ_FIRST(activeq)) {
+ 		struct event *ev=NULL;
+ 		if (evcb->evcb_flags & EVLIST_INIT) {
+@@ -1747,6 +1747,7 @@
+ 		if (base->event_continue)
+ 			break;
+ 	}
++batch_flush();
+ 	return count;
+ }
+
