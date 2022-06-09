@@ -52,6 +52,7 @@ typedef struct esca_config {
     int max_usr_worker;
     int max_ker_worker;
     int default_idle_time;
+    int affinity_offset;
 } esca_config_t;
 
 static const esca_config_t default_config
@@ -61,7 +62,8 @@ static const esca_config_t default_config
           .max_table_len = 1,
           .max_usr_worker = 1,
           .max_ker_worker = 1,
-          .default_idle_time = 150
+          .default_idle_time = 150,
+          .affinity_offset = 0
       };
 
 esca_config_t* config;

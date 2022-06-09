@@ -45,6 +45,7 @@ int MAX_USR_WORKER;
 int MAX_CPU_NUM;
 int RATIO;
 int DEFAULT_IDLE_TIME;
+int AFF_OFF;
 
 /* restore original syscall for recover */
 void* syscall_register_ori;
@@ -227,9 +228,9 @@ static int worker(void* arg)
     unsigned long timeout = 0;
 
     if (ESCA_LOCALIZE)
-        set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid / RATIO));
+        set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid / RATIO) + AFF_OFF);
     else
-        set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid));
+        set_cpus_allowed_ptr(current, cpumask_of(cur_cpuid) + AFF_OFF);
 
     init_waitqueue_head(&wq[cur_cpuid]);
     DEFINE_WAIT(wait);
@@ -459,12 +460,14 @@ asmlinkage void sys_esca_init_config(const struct __user pt_regs* regs)
     MAX_CPU_NUM = kconfig->max_ker_worker;
     RATIO = (MAX_CPU_NUM / MAX_USR_WORKER);
     DEFAULT_IDLE_TIME = kconfig->default_idle_time;
+    AFF_OFF = kconfig->affinity_offset;
 
     printk("Localize: %s\n", ESCA_LOCALIZE ? "Enable" : "Disable");
     printk("MAX_TABLE_ENTRY: %d\n", MAX_TABLE_ENTRY);
     printk("MAX_TABLE_LEN: %d\n", MAX_TABLE_LEN);
     printk("MAX_USR_WORKER: %d\n", MAX_USR_WORKER);
     printk("MAX_KER_WORKER: %d\n", MAX_CPU_NUM);
+    printk("AFF_OFF: %d\n", AFF_OFF);
 
     if (ESCA_LOCALIZE)
         printk("# of K-worker per CPU: %d\n", RATIO);

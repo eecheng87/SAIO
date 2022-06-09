@@ -28,6 +28,7 @@ int MAX_USR_WORKER;
 int MAX_CPU_NUM;
 int RATIO;
 int DEFAULT_IDLE_TIME;
+int AFF_OFF;
 
 /* declare shared table, pin user space addr. to kernel phy. addr by kmap */
 int this_worker_id;
@@ -147,6 +148,7 @@ void init_config(esca_config_t* c)
     MAX_CPU_NUM = c->max_ker_worker;
     RATIO = (MAX_CPU_NUM / MAX_USR_WORKER);
     DEFAULT_IDLE_TIME = c->default_idle_time;
+    AFF_OFF = c->affinity_offset;
 
     printf("\033[0;33m");
     printf(" Localize: \033[0;37m%s\033[0;33m\n", ESCA_LOCALIZE ? "Enable" : "Disable");
@@ -154,6 +156,7 @@ void init_config(esca_config_t* c)
     printf(" MAX_TABLE_LEN: \033[0;37m%d\033[0;33m\n", MAX_TABLE_LEN);
     printf(" MAX_USR_WORKER: \033[0;37m%d\033[0;33m\n", MAX_USR_WORKER);
     printf(" MAX_KER_WORKER: \033[0;37m%d\033[0;33m\n", MAX_CPU_NUM);
+    printf(" AFF_OFF: \033[0;37m%d\033[0;33m\n", AFF_OFF);
 
     if (ESCA_LOCALIZE)
         printf(" # of K-worker per CPU: \033[0;37m%d\n", RATIO);
@@ -205,6 +208,8 @@ __attribute__((constructor)) static void setup(void)
                 config->max_ker_worker = option.val;
             } else if (strcmp(option.key, "default_idle_time") == 0) {
                 config->default_idle_time = option.val;
+            } else if (strcmp(option.key, "affinity_offset") == 0) {
+                config->affinity_offset = option.val;
             } else {
                 printf("Invalid option: %s\n", option.key);
             }
