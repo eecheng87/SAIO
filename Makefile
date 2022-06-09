@@ -189,6 +189,6 @@ clean-out:
 	rm -rf auth
 
 recover:
-	git checkout HEAD -- configs/nginx.conf wrapper/ngx.c module/include/esca.h
+	git checkout HEAD -- configs/nginx.conf wrapper/ngx.c module/include/esca.h esca.conf
 
 .PHONY: $(TOPTARGETS) $(SUBDIRS) $(NGX) $(LIGHTY)
