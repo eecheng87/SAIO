@@ -2,11 +2,11 @@
 
 #define DEPLOY_TAGET 1
 #define MAX_TABLE_SIZE 64
-#define MAX_POOL_SIZE 900000000
+#define MAX_POOL_SIZE 9000000000
 
 /* optimize: order two */
-#define MAX_POOL_IOV_SIZE 1024
-#define MAX_POOL_MSG_SIZE 1024
+#define MAX_POOL_IOV_SIZE 262144
+#define MAX_POOL_MSG_SIZE 262144
 #define IOV_MASK (MAX_POOL_IOV_SIZE - 1)
 #define MSG_MASK (MAX_POOL_MSG_SIZE - 1)
 #define POOL_UNIT 8
@@ -25,6 +25,7 @@
 #include <sys/types.h>
 #include <sys/uio.h>
 #include <time.h>
+#include <unistd.h>
 
 typedef unsigned long long ull;
 

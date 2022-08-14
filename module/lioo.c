@@ -291,7 +291,7 @@ static int worker(void* arg)
             table[cur_cpuid]->tables[i][j].rstatus = BENTRY_EMPTY;
 
 #if 0
-            printk(KERN_INFO "Index %d,%d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", i, j,
+            printk(KERN_INFO "[%d] Index %d,%d do syscall %d : %d = (%d, %d, %ld, %d) at cpu%d\n", cur_cpuid, i, j,
                 table[cur_cpuid]->tables[i][j].sysnum, table[cur_cpuid]->tables[i][j].sysret, table[cur_cpuid]->tables[i][j].args[0],
                 table[cur_cpuid]->tables[i][j].args[1], table[cur_cpuid]->tables[i][j].args[2],
                 table[cur_cpuid]->tables[i][j].args[3], smp_processor_id());
@@ -357,50 +357,45 @@ asmlinkage long sys_esca_register(const struct __user pt_regs* regs)
     args->id = id;
 
     if (p1[0]) {
-        /* header is not null */
+        /* header is not null, pin header */
         n_page = get_user_pages((unsigned long)(p1[0]), 1, FOLL_FORCE | FOLL_WRITE,
             shared_info_pinned_pages, NULL);
 
         esca_table_t* header = (esca_table_t*)kmap(shared_info_pinned_pages[0]);
-        for (int i = id; i < id + RATIO; i++) {
-            table[i] = header + i - id;
+        for (int i = 0; i < MAX_CPU_NUM; i++) {
+            table[i] = header + i;
         }
-    } else {
-        /* make sure header has been register */
-        while (!table[id]) {
-            cond_resched();
+    } else if (p1[1]) {
+        /* map tables from user-space to kernel */
+        n_page = get_user_pages((unsigned long)(p1[1]), MAX_TABLE_LEN,
+            FOLL_FORCE | FOLL_WRITE, table_pinned_pages[id],
+            NULL);
+        printk("Pin %d pages in worker %d\n", n_page, id);
+
+        for (int j = 0; j < MAX_TABLE_LEN; j++) {
+            table[id]->tables[j] = (esca_table_entry_t*)kmap(table_pinned_pages[id][j]);
+            printk("table[%d][%d]=%p\n", id, j, table[id]->tables[j]);
         }
+
+        /* initial entry status */
+        for (int j = 0; j < MAX_TABLE_LEN; j++)
+            for (int k = 0; k < MAX_TABLE_ENTRY; k++)
+                table[id]->tables[j][k].rstatus = BENTRY_EMPTY;
+
+        // TODO: merge them
+        table[id]->head_table = table[id]->tail_table = 0;
+        table[id]->head_entry = table[id]->tail_entry = 0;
+
+        // TODO: merge them
+        submitted[id] = 0;
+        table[id]->flags = 0 | ESCA_WORKER_NEED_WAKEUP;
+        table[id]->idle_time = msecs_to_jiffies(DEFAULT_IDLE_TIME);
+        init_waitqueue_head(&worker_wait[id]);
+
+        // closure is important
+        worker_task[id] = create_io_thread_ptr(worker, args, -1);
+        wake_up_new_task_ptr(worker_task[id]);
     }
-
-    /* map tables from user-space to kernel */
-    n_page = get_user_pages((unsigned long)(p1[1]), MAX_TABLE_LEN,
-        FOLL_FORCE | FOLL_WRITE, table_pinned_pages[id],
-        NULL);
-    printk("Pin %d pages in worker %d\n", n_page, id);
-
-    for (int j = 0; j < MAX_TABLE_LEN; j++) {
-        table[id]->tables[j] = (esca_table_entry_t*)kmap(table_pinned_pages[id][j]);
-        printk("table[%d][%d]=%p\n", id, j, table[id]->tables[j]);
-    }
-
-    /* initial entry status */
-    for (int j = 0; j < MAX_TABLE_LEN; j++)
-        for (int k = 0; k < MAX_TABLE_ENTRY; k++)
-            table[id]->tables[j][k].rstatus = BENTRY_EMPTY;
-
-    // TODO: merge them
-    table[id]->head_table = table[id]->tail_table = 0;
-    table[id]->head_entry = table[id]->tail_entry = 0;
-
-    // TODO: merge them
-    submitted[id] = 0;
-    table[id]->flags = 0 | ESCA_WORKER_NEED_WAKEUP;
-    table[id]->idle_time = msecs_to_jiffies(DEFAULT_IDLE_TIME);
-    init_waitqueue_head(&worker_wait[id]);
-
-    // closure is important
-    worker_task[id] = create_io_thread_ptr(worker, args, -1);
-    wake_up_new_task_ptr(worker_task[id]);
 
     return 0;
 }

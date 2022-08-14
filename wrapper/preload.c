@@ -7,18 +7,17 @@
 #include "../module/include/x86_syscall.h"
 #endif
 
-int in_segment;
+// FIXME: not reliable
+#define MAX_THREAD_NUM 10
 int main_pid;
-int batch_num; /* number of busy entry */
-int syscall_num; /* number of syscall triggered currently */
 size_t pgsize;
 
-void* mpool; /* memory pool */
-struct iovec* iovpool; /* pool for iovector */
-struct msghdr* msgpool; /* pool for msgpool */
-ull pool_offset;
-ull iov_offset;
-ull msg_offset;
+void* mpool[MAX_THREAD_NUM]; /* memory pool */
+struct iovec* iovpool[MAX_THREAD_NUM]; /* pool for iovector */
+struct msghdr* msgpool[MAX_THREAD_NUM]; /* pool for msgpool */
+__thread ull pool_offset;
+__thread ull iov_offset;
+__thread ull msg_offset;
 
 /* Global configurable variable */
 int ESCA_LOCALIZE;
@@ -31,10 +30,14 @@ int DEFAULT_IDLE_TIME;
 int AFF_OFF;
 
 /* declare shared table, pin user space addr. to kernel phy. addr by kmap */
-int this_worker_id;
+int main_thread_pid;
+__thread int this_worker_id;
+__thread int in_segment;
+__thread int batch_num; /* number of busy entry */
+__thread int syscall_num; /* number of syscall triggered currently */
 
 /* user worker can't touch worker's table in diff. set */
-esca_table_t* table[CPU_NUM_LIMIT];
+esca_table_t* table;
 
 void init_worker(int idx)
 {
@@ -42,25 +45,15 @@ void init_worker(int idx)
     batch_num = 0;
     syscall_num = 0;
 
-    /* expect idx = 0 ~ MAX_USR_WORKER - 1 */
     this_worker_id = idx;
-
-    printf("Create worker ID = %d, pid = %d\n", this_worker_id, getpid());
+    printf("Create worker ID = %ld, tid = %d, pid = %d\n", this_worker_id, gettid(), getpid());
 
     if (idx >= MAX_USR_WORKER) {
         printf("[ERROR] Process exceed limit\n");
         goto init_worker_exit;
     }
 
-    int set_index = 0;
     for (int i = idx * RATIO; i < idx * RATIO + RATIO; i++) {
-        /* headers in same set using a same page */
-        esca_table_t* header = NULL;
-        if (i == idx * RATIO) {
-            header = table[i] = (esca_table_t*)aligned_alloc(pgsize, pgsize);
-        }
-        table[i] = table[idx * RATIO] + (i - idx * RATIO);
-
         /* allocate tables */
         esca_table_entry_t* alloc = (esca_table_entry_t*)aligned_alloc(pgsize, pgsize * MAX_TABLE_LEN);
         if (!alloc) {
@@ -69,19 +62,19 @@ void init_worker(int idx)
         }
 
         /* pin tables to kernel */
-        syscall(__NR_esca_register, header, alloc, i, set_index++);
+        syscall(__NR_esca_register, NULL, alloc, i, 0);
 
         /* pin table from kernel to user */
         for (int j = 0; j < MAX_TABLE_LEN; j++) {
-            table[i]->user_tables[j] = alloc + j * MAX_TABLE_ENTRY;
+            table[i].user_tables[j] = alloc + j * MAX_TABLE_ENTRY;
         }
     }
 
-    mpool = (void*)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
+    mpool[idx] = (void*)malloc(sizeof(unsigned char) * MAX_POOL_SIZE);
     pool_offset = 0;
-    iovpool = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
+    iovpool[idx] = (struct iovec*)malloc(sizeof(struct iovec) * MAX_POOL_IOV_SIZE);
     iov_offset = 0;
-    msgpool = (struct msghdr*)malloc(sizeof(struct msghdr) * MAX_POOL_MSG_SIZE);
+    msgpool[idx] = (struct msghdr*)malloc(sizeof(struct msghdr) * MAX_POOL_MSG_SIZE);
     msg_offset = 0;
 
 init_worker_exit:
@@ -92,14 +85,6 @@ long batch_start()
 {
     int i = this_worker_id;
     in_segment = 1;
-
-    for (int j = i * RATIO; j < i * RATIO + RATIO; j++) {
-        if (esca_unlikely(ESCA_READ_ONCE(table[j]->flags) & ESCA_WORKER_NEED_WAKEUP)) {
-            table[j]->flags |= ESCA_START_WAKEUP;
-            syscall(__NR_esca_wakeup, j);
-            table[j]->flags &= ~ESCA_START_WAKEUP;
-        }
-    }
 
     return 0;
 }
@@ -126,14 +111,14 @@ void update_index(int idx)
     // avoid overwriting;
     // FIXME: need to consider more -> cross table scenario
     // FIXME: order of the head might be protected by barrier
-    while ((table[idx]->tail_entry + 1 == table[idx]->head_entry) && (table[idx]->tail_table == table[idx]->head_table))
+    while ((table[idx].tail_entry + 1 == table[idx].head_entry) && (table[idx].tail_table == table[idx].head_table))
         ;
 
-    if (table[idx]->tail_entry == MAX_TABLE_ENTRY - 1) {
-        table[idx]->tail_entry = 0;
-        table[idx]->tail_table = (table[idx]->tail_table == MAX_TABLE_LEN - 1) ? 0 : table[idx]->tail_table + 1;
+    if (table[idx].tail_entry == MAX_TABLE_ENTRY - 1) {
+        table[idx].tail_entry = 0;
+        table[idx].tail_table = (table[idx].tail_table == MAX_TABLE_LEN - 1) ? 0 : table[idx].tail_table + 1;
     } else {
-        table[idx]->tail_entry++;
+        table[idx].tail_entry++;
     }
 }
 
@@ -217,4 +202,15 @@ __attribute__((constructor)) static void setup(void)
     }
     init_config(config);
     syscall(__NR_esca_config, config);
+    main_thread_pid = getpid();
+
+    for(int i = 0; i < MAX_THREAD_NUM; i++){
+        mpool[i] = NULL;
+        iovpool[i] = NULL;
+        msgpool[i] = NULL;
+    }
+
+    /* pin header */
+    table = (esca_table_t*)aligned_alloc(pgsize, pgsize);
+    syscall(__NR_esca_register, table, NULL, config->max_ker_worker, 0);
 }
