@@ -43,6 +43,12 @@ LIBEVENT_ZIP_NAME := release-2.1.12-stable
 LIBEVENT_PATH := downloads/$(LIBEVENT_NAME)
 LIBEVENT := libevent
 
+MEMTIER_SOURCE := https://github.com/RedisLabs/memtier_benchmark/archive/refs/tags/1.4.0.zip
+MEMTIER_NAME := memtier_benchmark-1.4.0
+MEMTIER_ZIP_NAME := 1.4.0
+MEMTIER_PATH := downloads/$(MEMTIER_NAME)
+MEMTIER := memtier
+
 LIBDUMMY_PATH := $(shell find $(shell pwd) -type f -name "libdummy.so") | sed 's_/_\\/_g'
 PWD := $(shell pwd)
 OUT := downloads
@@ -110,7 +116,6 @@ $(LIBEVENT):
 	cd $(LIBEVENT_PATH) && mkdir -p local && ./autogen.sh && ./configure --prefix=$(PWD)/$(LIBEVENT_PATH)/local
 	cd $(OUT) && patch -p1 < ../patches/libevent.patch
 
-
 $(MEMCACHED): $(LIBEVENT)
 	@echo "download memcached..."
 	wget $(MEMCACHED_SOURCE)
@@ -123,6 +128,16 @@ $(MEMCACHED): $(LIBEVENT)
 	cd $(LIBEVENT_PATH) && make -j$(nproc) && sudo make install
 	scripts/memcached.sh $(MEMCACHED_PATH)
 	cd $(MEMCACHED_PATH) && make -j$(nproc)
+
+$(MEMTIER):
+	@echo "download memtier_benchmark..."
+	wget $(MEMTIER_SOURCE)
+	mkdir -p $(MEMTIER_PATH)
+	unzip $(MEMTIER_ZIP_NAME).zip -d $(OUT)
+	rm $(MEMTIER_ZIP_NAME).zip
+	cd $(MEMTIER_PATH) && autoreconf -ivf && ./configure
+	cd $(OUT) && patch -p1 < ../patches/shard_connection.patch
+	cd $(MEMTIER_PATH) && make -j$(nproc)
 
 test-nginx-perf:
 	./$(NGX_PATH)/objs/nginx
