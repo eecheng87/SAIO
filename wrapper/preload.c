@@ -8,7 +8,7 @@
 #endif
 
 // FIXME: not reliable
-#define MAX_THREAD_NUM 10
+#define MAX_THREAD_NUM 20
 int main_pid;
 size_t pgsize;
 

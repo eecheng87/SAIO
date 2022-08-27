@@ -12,6 +12,7 @@ ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags)
     int j = table[idx].tail_entry;
 
     int k = this_worker_id;
+
     if (esca_unlikely(ESCA_READ_ONCE(table[k].flags) & ESCA_WORKER_NEED_WAKEUP)) {
         table[k].flags |= ESCA_START_WAKEUP;
         syscall(__NR_esca_wakeup, k);
@@ -24,16 +25,18 @@ ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags)
     iov_offset = iov_offset & IOV_MASK;
 
     int res = 0;
-    int start_iov_offset;
+    int start_iov_offset = 0;
     struct iovec* iov = msg->msg_iov;
     int iovlen = msg->msg_iovlen;
 
+    // minor optimization; only works if we guarantee offset always is one
+#if 0
     if(iov_offset + MAX_IOV_LEN > MAX_POOL_IOV_SIZE){
         start_iov_offset = iov_offset = 0;
     }else{
         start_iov_offset = iov_offset;
     }
-
+#endif
     for (int k = 0; k < iovlen; k++) {
         int ll = iov[k].iov_len; // number of bytes
 
