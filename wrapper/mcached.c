@@ -1,4 +1,5 @@
 #define MAX_IOV_LEN 1000
+// TODO: support M:N threading model
 ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags)
 {
     if (!in_segment) {
@@ -83,7 +84,9 @@ ssize_t write(int fd, const void* buf, size_t count)
         return real_write(fd, buf, count);
     }
 
-    int idx = this_worker_id * RATIO + (fd % RATIO);//this_worker_id;
+    int idx = this_worker_id * RATIO + (fd % RATIO);
+    int parent_idx = this_worker_id;
+
     batch_num++;
 
     int i = table[idx].tail_table;
@@ -92,12 +95,12 @@ ssize_t write(int fd, const void* buf, size_t count)
     if (pool_offset + (ull)(count) > MAX_POOL_SIZE)
         pool_offset = 0;
 
-    memcpy((void*)((ull)mpool[idx] + pool_offset), buf, count);
+    memcpy((void*)((ull)mpool[parent_idx] + pool_offset), buf, count);
 
     table[idx].user_tables[i][j].sysnum = __ESCA_write;
     table[idx].user_tables[i][j].nargs = 3;
     table[idx].user_tables[i][j].args[0] = fd;
-    table[idx].user_tables[i][j].args[1] = (void*)((ull)mpool[idx] + pool_offset);
+    table[idx].user_tables[i][j].args[1] = (void*)((ull)mpool[parent_idx] + pool_offset);
     table[idx].user_tables[i][j].args[2] = count;
 
     update_index(idx);
