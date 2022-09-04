@@ -86,6 +86,14 @@ long batch_start()
     int i = this_worker_id;
     in_segment = 1;
 
+    for (int j = i * RATIO; j < i * RATIO + RATIO; j++) {
+        if (esca_unlikely(ESCA_READ_ONCE(table[j].flags) & ESCA_WORKER_NEED_WAKEUP)) {
+            table[j].flags |= ESCA_START_WAKEUP;
+            syscall(__NR_esca_wakeup, j);
+            table[j].flags &= ~ESCA_START_WAKEUP;
+        }
+    }
+
     return 0;
 }
 

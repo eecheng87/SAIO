@@ -11,12 +11,6 @@ ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags)
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
 
-    if (esca_unlikely(ESCA_READ_ONCE(table[idx].flags) & ESCA_WORKER_NEED_WAKEUP)) {
-        table[idx].flags |= ESCA_START_WAKEUP;
-        syscall(__NR_esca_wakeup, idx);
-        table[idx].flags &= ~ESCA_START_WAKEUP;
-    }
-
     /* check out of bound */
     msg_offset = msg_offset & MSG_MASK;
     iov_offset = iov_offset & IOV_MASK;
@@ -91,12 +85,6 @@ ssize_t write(int fd, const void* buf, size_t count)
 
     int idx = this_worker_id * RATIO + (fd % RATIO);//this_worker_id;
     batch_num++;
-
-    if (esca_unlikely(ESCA_READ_ONCE(table[idx].flags) & ESCA_WORKER_NEED_WAKEUP)) {
-        table[idx].flags |= ESCA_START_WAKEUP;
-        syscall(__NR_esca_wakeup, idx);
-        table[idx].flags &= ~ESCA_START_WAKEUP;
-    }
 
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
