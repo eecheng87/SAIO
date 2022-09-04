@@ -11,14 +11,11 @@ ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags)
     int i = table[idx].tail_table;
     int j = table[idx].tail_entry;
 
-    int k = this_worker_id;
-
-    if (esca_unlikely(ESCA_READ_ONCE(table[k].flags) & ESCA_WORKER_NEED_WAKEUP)) {
-        table[k].flags |= ESCA_START_WAKEUP;
-        syscall(__NR_esca_wakeup, k);
-        table[k].flags &= ~ESCA_START_WAKEUP;
+    if (esca_unlikely(ESCA_READ_ONCE(table[idx].flags) & ESCA_WORKER_NEED_WAKEUP)) {
+        table[idx].flags |= ESCA_START_WAKEUP;
+        syscall(__NR_esca_wakeup, idx);
+        table[idx].flags &= ~ESCA_START_WAKEUP;
     }
-
 
     /* check out of bound */
     msg_offset = msg_offset & MSG_MASK;
@@ -82,3 +79,47 @@ ssize_t sendmsg(int sockfd, const struct msghdr* msg, int flags)
     /* assume success */
     return res;
 }
+
+
+// TLS
+ssize_t write(int fd, const void* buf, size_t count)
+{
+    // FIXME: propose better solution; don't hard code it
+    if (!in_segment || count != 27) {
+        return real_write(fd, buf, count);
+    }
+
+    int idx = this_worker_id * RATIO + (fd % RATIO);//this_worker_id;
+    batch_num++;
+
+    if (esca_unlikely(ESCA_READ_ONCE(table[idx].flags) & ESCA_WORKER_NEED_WAKEUP)) {
+        table[idx].flags |= ESCA_START_WAKEUP;
+        syscall(__NR_esca_wakeup, idx);
+        table[idx].flags &= ~ESCA_START_WAKEUP;
+    }
+
+    int i = table[idx].tail_table;
+    int j = table[idx].tail_entry;
+
+    if (pool_offset + (ull)(count) > MAX_POOL_SIZE)
+        pool_offset = 0;
+
+    memcpy((void*)((ull)mpool[idx] + pool_offset), buf, count);
+
+    table[idx].user_tables[i][j].sysnum = __ESCA_write;
+    table[idx].user_tables[i][j].nargs = 3;
+    table[idx].user_tables[i][j].args[0] = fd;
+    table[idx].user_tables[i][j].args[1] = (void*)((ull)mpool[idx] + pool_offset);
+    table[idx].user_tables[i][j].args[2] = count;
+
+    update_index(idx);
+
+    /* update offset of character pool */
+    pool_offset += (ull)(count);
+
+    esca_smp_store_release(&table[idx].user_tables[i][j].rstatus, BENTRY_BUSY);
+
+    /* assume success */
+    return count;
+}
+

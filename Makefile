@@ -36,6 +36,7 @@ MEMCACHED_NAME := memcached-1.6.15
 MEMCACHED_ZIP_NAME := memcached-1.6.15
 MEMCACHED_PATH := downloads/$(MEMCACHED_NAME)
 MEMCACHED := memcached
+MEMCACHED_CONFIG_TLS := --enable-tls
 
 LIBEVENT_SOURCE := https://github.com/libevent/libevent/archive/refs/tags/release-2.1.12-stable.tar.gz
 LIBEVENT_NAME := libevent-release-2.1.12-stable
@@ -122,7 +123,7 @@ $(MEMCACHED): $(LIBEVENT)
 	mkdir -p $(MEMCACHED_PATH)
 	tar -zxvf $(MEMCACHED_ZIP_NAME).tar.gz -C $(OUT)
 	rm $(MEMCACHED_ZIP_NAME).tar.gz
-	cd $(MEMCACHED_PATH) && mkdir -p local && ./configure --prefix=$(PWD)/$(MEMCACHED_PATH)/local
+	cd $(MEMCACHED_PATH) && mkdir -p local && ./configure --prefix=$(PWD)/$(MEMCACHED_PATH)/local $(MEMCACHED_CONFIG_TLS)
 	cd $(OUT) && patch -p1 < ../patches/memcached.patch
 	scripts/libevent.sh $(LIBEVENT_PATH)
 	cd $(LIBEVENT_PATH) && make -j$(nproc) && sudo make install
@@ -131,7 +132,7 @@ $(MEMCACHED): $(LIBEVENT)
 
 $(MEMTIER):
 	@echo "download memtier_benchmark..."
-	wget $(MEMTIER_SOURCE)
+	wget --no-check-certificate $(MEMTIER_SOURCE)
 	mkdir -p $(MEMTIER_PATH)
 	unzip $(MEMTIER_ZIP_NAME).zip -d $(OUT)
 	rm $(MEMTIER_ZIP_NAME).zip
