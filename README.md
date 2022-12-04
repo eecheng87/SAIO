@@ -70,7 +70,8 @@ All experiments are run on Marvell ThunderX2 CN9975 powered R281-T91 Arm server 
 
 
 ### The structural scalability of Nginx
-
+![image](assets/ngx_scala.png)
 ### Throughput of Nginx with varied connection number
-
+![image](assets/ngx_conn.png)
 ### Tail latency of Nginx with different throughput
+![image](assets/ngx_tail.png)
