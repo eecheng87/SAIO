@@ -56,3 +56,21 @@ LD_PRELOAD=/path/to/preload.so ./memcached -t 1
 ./memtier_benchmark -p 11211 --protocol=memcache_text --clients=100 --threads=5 --ratio=1:1 --key-pattern=R:R --key-minimum=16 --key-maximum=16 --data-size=128 --test-time=5
 ```
 
+## Evaluation
+The following experiments will evaluate throughput, latency, and scalability, which are extremely important for EDAs.
+All experiments are run on Marvell ThunderX2 CN9975 powered R281-T91 Arm server with the characteristics shown in Table.
+
+| Component          | Specification |
+| ------------------ | ------------- |
+| Thread(s) per core | 4             |
+| NUMA node          | 2             |
+| Core(s) per socket | 28            |
+| Memory             | 128 GiB       |
+| CPU Architecture   | Arm64         |
+
+
+### The structural scalability of Nginx
+
+### Throughput of Nginx with varied connection number
+
+### Tail latency of Nginx with different throughput
