@@ -13,7 +13,7 @@
 
 /* Limit */
 #define CPU_NUM_LIMIT 100
-#define TABLE_LEN_LIMIT 10
+#define TABLE_LEN_LIMIT 30
 #define TABLE_ENT_LIMIT 64
 
 #define ESCA_WRITE_ONCE(var, val)                           \
