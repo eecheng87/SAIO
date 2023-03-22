@@ -99,7 +99,7 @@ $(REDIS):
 	rm $(REDIS_ZIP_NAME).tar.gz
 	scripts/redis.sh $(REDIS_PATH)
 	cd $(OUT) && patch -p1 < ../patches/redis_network.patch && patch -p1 < ../patches/redis_server.patch
-	cd $(REDIS_PATH) && make -j$(nproc)
+	cd $(REDIS_PATH) && make BUILD_TLS=$(tls) -j$(nproc) && ./utils/gen-test-certs.sh
 
 $(LIBEVENT):
 	@echo "download libevent..."
@@ -142,6 +142,12 @@ test-redis-perf:
 test-esca-redis-perf:
 	LD_PRELOAD=wrapper/preload.so ./$(REDIS_PATH)/src/redis-server
 
+test-esca-redis-tls-perf:
+	LD_PRELOAD=wrapper/preload.so ./$(REDIS_PATH)/src/redis-server --tls-port 6379 --port 0 \
+		--tls-cert-file ./$(REDIS_PATH)/tests/tls/redis.crt \
+		--tls-key-file ./$(REDIS_PATH)/tests/tls/redis.key \
+		--tls-ca-cert-file ./$(REDIS_PATH)/tests/tls/ca.crt
+
 default-redis-benchmark:
 	./$(REDIS_PATH)/src/redis-benchmark -t set,get -n 100000 -q -c 100 -P 16
 
@@ -171,10 +177,10 @@ config:
 	sed -i "s#DEFAULT_CONFIG_PATH \".*\"#DEFAULT_CONFIG_PATH \"$(PWD)/esca\.conf\"#" module/include/esca.h
 	ln -s $(shell pwd)/wrapper/$(TARGET).c wrapper/target-preload.c
 ifneq ($(CONFIG),)
-	@if [ $(CONFIG) = "tls" ]; then \
+	@if [ $(CONFIG) = "tls" ] && [ $(TARGET) = "ngx" ]; then \
 		echo ">> TLS is used"; \
 		cat wrapper/ngx_tls.c >> wrapper/target-preload.c; \
-	elif [ $(CONFIG) = "ktls" ]; then \
+	elif [ $(CONFIG) = "ktls" ] && [ $(TARGET) = "ngx" ]; then \
 		echo ">> kTLS is used"; \
 		cat wrapper/ngx_ktls.c >> wrapper/target-preload.c; \
 	fi
