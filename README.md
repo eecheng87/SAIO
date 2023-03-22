@@ -56,6 +56,19 @@ LD_PRELOAD=/path/to/preload.so ./memcached -t 1
 ./memtier_benchmark -p 11211 --protocol=memcache_text --clients=100 --threads=5 --ratio=1:1 --key-pattern=R:R --key-minimum=16 --key-maximum=16 --data-size=128 --test-time=5
 ```
 
+### Redis
+```
+# download and build Redis without tls
+make config TARGET=redis
+sudo make
+make redis tls=no
+
+# download and build Redis with tls
+make config TARGET=redis CONFIG=tls
+sudo make
+make redis tls=yes
+```
+
 ## Evaluation
 The following experiments will evaluate throughput, latency, and scalability, which are extremely important for EDAs.
 All experiments are run on Marvell ThunderX2 CN9975 powered R281-T91 Arm server with the characteristics shown in Table.
