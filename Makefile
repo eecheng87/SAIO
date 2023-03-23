@@ -142,6 +142,12 @@ test-redis-perf:
 test-esca-redis-perf:
 	LD_PRELOAD=wrapper/preload.so ./$(REDIS_PATH)/src/redis-server
 
+test-redis-tls-perf:
+	./$(REDIS_PATH)/src/redis-server --tls-port 6379 --port 0 \
+		--tls-cert-file ./$(REDIS_PATH)/tests/tls/redis.crt \
+		--tls-key-file ./$(REDIS_PATH)/tests/tls/redis.key \
+		--tls-ca-cert-file ./$(REDIS_PATH)/tests/tls/ca.crt
+
 test-esca-redis-tls-perf:
 	LD_PRELOAD=wrapper/preload.so ./$(REDIS_PATH)/src/redis-server --tls-port 6379 --port 0 \
 		--tls-cert-file ./$(REDIS_PATH)/tests/tls/redis.crt \
