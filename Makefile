@@ -93,7 +93,7 @@ $(NGX):
 
 $(REDIS):
 	@echo "download redis..."
-	wget $(REDIS_SOURCE)
+	wget $(REDIS_SOURCE) --no-check-certificate
 	mkdir -p $(REDIS_PATH)
 	tar -zxvf $(REDIS_ZIP_NAME).tar.gz -C $(OUT)
 	rm $(REDIS_ZIP_NAME).tar.gz
