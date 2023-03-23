@@ -63,3 +63,4 @@ echo/io_uring_echo_server
 echo/epoll_echo_server
 echo/rps
 auth/
+dump.rdb
